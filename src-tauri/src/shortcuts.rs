@@ -229,10 +229,12 @@ fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
         Ok(true) => {
             #[cfg(target_os = "macos")]
             {
+                println!("[MACOS] Hiding panel");
                 let panel = app.get_webview_window("main").unwrap();
                 let _ = panel.hide();
             }
             // Window is visible, hide it and handle app icon based on user settings
+            println!("[NON-WINDOWS] Hiding window");
             if let Err(e) = window.hide() {
                 eprintln!("Failed to hide window: {}", e);
             }

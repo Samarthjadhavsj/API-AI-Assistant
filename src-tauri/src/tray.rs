@@ -73,8 +73,10 @@ fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
         match window.is_visible() {
             Ok(visible) => {
                 if visible {
+                    println!("[TRAY] Hiding window via tray toggle");
                     let _ = window.hide();
                 } else {
+                    println!("[TRAY] Showing window via tray toggle");
                     let _ = window.show();
                     let _ = window.set_focus();
                 }
