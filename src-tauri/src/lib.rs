@@ -14,6 +14,37 @@ mod speaker;
 use capture::CaptureState;
 use speaker::VadConfig;
 
+#[cfg(target_os = "windows")]
+use windows::Win32::Foundation::HWND;
+#[cfg(target_os = "windows")]
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos,
+    GWL_EXSTYLE, HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
+};
+#[cfg(target_os = "windows")]
+use windows::Win32::UI::WindowsAndMessaging::{WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW};
+
+#[cfg(target_os = "windows")]
+fn apply_overlay_style(hwnd: HWND) {
+    unsafe {
+        let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        let new_style = ex_style
+            | WS_EX_NOACTIVATE.0 as isize
+            | WS_EX_TOOLWINDOW.0 as isize;
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_style);
+
+        let _ = SetWindowPos(
+            hwnd,
+            HWND_TOPMOST,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
+        );
+    }
+}
+
 #[cfg(target_os = "macos")]
 #[allow(deprecated)]
 use tauri_nspanel::{cocoa::appkit::NSWindowCollectionBehavior, panel_delegate, WebviewWindowExt};
@@ -49,6 +80,7 @@ pub fn run() {
         .manage(shortcuts::RegisteredShortcuts::default())
         .manage(shortcuts::LicenseState::default())
         .manage(shortcuts::MoveWindowState::default())
+        .manage(shortcuts::OverlayState::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_keychain::init())
@@ -128,26 +160,37 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             {
                 if let Some(main_window) = app.get_webview_window("main") {
-                    // Ensure window stays always on top
-                    let _ = main_window.set_always_on_top(true);
+                    // Apply Win32 overlay styles (WS_EX_NOACTIVATE + WS_EX_TOOLWINDOW)
+                    if let Ok(hwnd) = main_window.hwnd() {
+                        apply_overlay_style(HWND(hwnd.0));
+                        println!("Applied Win32 overlay styles (WS_EX_NOACTIVATE + WS_EX_TOOLWINDOW)");
+                    }
                     
-                    // Add comprehensive event logging to catch what's hiding the window
-                    let window_clone = main_window.clone();
+                    // Safety net: re-show window on focus loss if user didn't hide it
+                    let overlay_state = app.state::<shortcuts::OverlayState>();
+                    let user_hidden = overlay_state.user_hidden.clone();
+                    let window_for_handler = main_window.clone();
+                    
                     main_window.on_window_event(move |event| {
-                        println!("[WINDOW EVENT] {:?}", event);
-                        
-                        // Log specifically when window loses focus
                         if let tauri::WindowEvent::Focused(false) = event {
-                            println!("[CRITICAL] Window lost focus - checking for auto-hide");
+                            println!("[FOCUS LOST] Checking if we should re-show...");
                             
-                            // Check if window is still visible after focus loss
-                            if let Ok(visible) = window_clone.is_visible() {
-                                println!("[VISIBILITY CHECK] Window is_visible = {}", visible);
+                            // Only re-show if user didn't explicitly hide it
+                            if !user_hidden.load(std::sync::atomic::Ordering::SeqCst) {
+                                println!("[AUTO-RESTORE] Re-showing window and re-applying overlay styles");
+                                let _ = window_for_handler.show();
+                                
+                                // Re-apply overlay styles
+                                if let Ok(hwnd) = window_for_handler.hwnd() {
+                                    apply_overlay_style(HWND(hwnd.0));
+                                }
+                            } else {
+                                println!("[FOCUS LOST] User hid window, not restoring");
                             }
                         }
                     });
                     
-                    println!("Configured window for persistent visibility (always-on-top)");
+                    println!("Configured window for persistent visibility");
                 }
             }
             

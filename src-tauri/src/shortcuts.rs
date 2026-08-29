@@ -11,7 +11,21 @@ use tokio::time::{sleep, Duration};
 use tauri_nspanel::ManagerExt;
 
 use crate::window::create_dashboard_window;
-// State for window visibility
+
+// State for overlay window - tracks if user intentionally hid it
+pub struct OverlayState {
+    pub user_hidden: Arc<AtomicBool>,
+}
+
+impl Default for OverlayState {
+    fn default() -> Self {
+        OverlayState {
+            user_hidden: Arc::new(AtomicBool::new(true)), // starts hidden
+        }
+    }
+}
+
+// State for window visibility (legacy, keeping for compatibility)
 pub struct WindowVisibility {
     #[allow(dead_code)]
     pub is_hidden: Mutex<bool>,
@@ -194,23 +208,31 @@ fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
 
     #[cfg(target_os = "windows")]
     {
+        let state = app.state::<OverlayState>();
         let is_visible = window.is_visible().unwrap_or(false);
 
         if is_visible {
             // Window is visible, hide it
             println!("[TOGGLE] Hiding window (user requested)");
+            state.user_hidden.store(true, Ordering::SeqCst);
             if let Err(e) = window.hide() {
                 eprintln!("Failed to hide window: {}", e);
             }
         } else {
             // Window is hidden, show it
             println!("[TOGGLE] Showing window (user requested)");
+            state.user_hidden.store(false, Ordering::SeqCst);
             if let Err(e) = window.show() {
                 eprintln!("Failed to show window: {}", e);
             }
-            if let Err(e) = window.set_focus() {
-                eprintln!("Failed to focus window: {}", e);
-            }
+            
+            // Delay set_focus to avoid race with show()
+            let window_clone = window.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(30));
+                let _ = window_clone.set_focus();
+            });
+            
             if let Err(e) = window.emit("focus-text-input", json!({})) {
                 eprintln!("Failed to emit focus-text-input event: {}", e);
             }
