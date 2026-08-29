@@ -72,23 +72,19 @@ export const useApp = () => {
     window.dispatchEvent(new CustomEvent("newConversation"));
   };
 
-  // WINDOWS HIDE/SHOW TOGGLE WINDOW WORKAROUND FOR SHORTCUTS
+  // WINDOWS TOGGLE WINDOW EVENT - Only for closing popovers
   useEffect(() => {
-    const unlistenPromise = listen<boolean>(
+    const unlistenPromise = listen(
       "toggle-window-visibility",
-      (event) => {
+      () => {
         const platform = navigator.platform.toLowerCase();
-        if (typeof event.payload === "boolean" && platform.includes("win")) {
-          setIsHidden(!event.payload);
-          // find popover open and close it
+        if (platform.includes("win")) {
+          // Close any open popovers when toggling
           const popover = document.getElementById("popover-content");
-          // set display to none, change data-state to closed
           if (popover) {
             popover.style.setProperty("display", "none", "important");
-            // update the data-state to closed
             popover.setAttribute("data-state", "closed");
 
-            // Also find and update the popover trigger's data-state
             const popoverTriggers = document.querySelectorAll(
               '[data-slot="popover-trigger"]'
             );

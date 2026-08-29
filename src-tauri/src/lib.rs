@@ -4,14 +4,46 @@ mod api;
 mod capture;
 mod db;
 mod shortcuts;
+mod tray;
 mod window;
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Manager, WebviewWindow};
+use tauri::Manager;
 use tauri_plugin_posthog::{init as posthog_init, PostHogConfig, PostHogOptions};
 use tokio::task::JoinHandle;
 mod speaker;
 use capture::CaptureState;
 use speaker::VadConfig;
+
+#[cfg(target_os = "windows")]
+use windows::Win32::Foundation::HWND;
+#[cfg(target_os = "windows")]
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos,
+    GWL_EXSTYLE, HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
+};
+#[cfg(target_os = "windows")]
+use windows::Win32::UI::WindowsAndMessaging::{WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW};
+
+#[cfg(target_os = "windows")]
+fn apply_overlay_style(hwnd: HWND) {
+    unsafe {
+        let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        let new_style = ex_style
+            | WS_EX_NOACTIVATE.0 as isize
+            | WS_EX_TOOLWINDOW.0 as isize;
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_style);
+
+        let _ = SetWindowPos(
+            hwnd,
+            HWND_TOPMOST,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
+        );
+    }
+}
 
 #[cfg(target_os = "macos")]
 #[allow(deprecated)]
@@ -33,6 +65,7 @@ fn get_app_version() -> String {
 pub fn run() {
     // Get PostHog API key
     let posthog_api_key = option_env!("POSTHOG_API_KEY").unwrap_or("").to_string();
+    #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
     let mut builder = tauri::Builder::default()
         .plugin(
             tauri_plugin_sql::Builder::default()
@@ -47,6 +80,7 @@ pub fn run() {
         .manage(shortcuts::RegisteredShortcuts::default())
         .manage(shortcuts::LicenseState::default())
         .manage(shortcuts::MoveWindowState::default())
+        .manage(shortcuts::OverlayState::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_keychain::init())
@@ -69,6 +103,7 @@ pub fn run() {
     {
         builder = builder.plugin(tauri_nspanel::init());
     }
+    #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
     let mut builder = builder
         .invoke_handler(tauri::generate_handler![
             get_app_version,
@@ -113,8 +148,52 @@ pub fn run() {
             speaker::get_audio_sample_rate,
         ])
         .setup(|app| {
-            // Setup main window positioning
+            // Setup system tray
+            if let Err(e) = tray::setup_system_tray(app.handle()) {
+                eprintln!("Failed to setup system tray: {}", e);
+            }
+            
+            // Setup main window positioning and configure for persistence
             window::setup_main_window(app).expect("Failed to setup main window");
+            
+            // Configure window to stay visible (Windows)
+            #[cfg(target_os = "windows")]
+            {
+                if let Some(main_window) = app.get_webview_window("main") {
+                    // Apply Win32 overlay styles (WS_EX_NOACTIVATE + WS_EX_TOOLWINDOW)
+                    if let Ok(hwnd) = main_window.hwnd() {
+                        apply_overlay_style(HWND(hwnd.0));
+                        println!("Applied Win32 overlay styles (WS_EX_NOACTIVATE + WS_EX_TOOLWINDOW)");
+                    }
+                    
+                    // Safety net: re-show window on focus loss if user didn't hide it
+                    let overlay_state = app.state::<shortcuts::OverlayState>();
+                    let user_hidden = overlay_state.user_hidden.clone();
+                    let window_for_handler = main_window.clone();
+                    
+                    main_window.on_window_event(move |event| {
+                        if let tauri::WindowEvent::Focused(false) = event {
+                            println!("[FOCUS LOST] Checking if we should re-show...");
+                            
+                            // Only re-show if user didn't explicitly hide it
+                            if !user_hidden.load(std::sync::atomic::Ordering::SeqCst) {
+                                println!("[AUTO-RESTORE] Re-showing window and re-applying overlay styles");
+                                let _ = window_for_handler.show();
+                                
+                                // Re-apply overlay styles
+                                if let Ok(hwnd) = window_for_handler.hwnd() {
+                                    apply_overlay_style(HWND(hwnd.0));
+                                }
+                            } else {
+                                println!("[FOCUS LOST] User hid window, not restoring");
+                            }
+                        }
+                    });
+                    
+                    println!("Configured window for persistent visibility");
+                }
+            }
+            
             #[cfg(target_os = "macos")]
             init(app.app_handle());
 
