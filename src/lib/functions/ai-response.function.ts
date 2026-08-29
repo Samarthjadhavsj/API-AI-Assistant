@@ -122,7 +122,22 @@ export async function* fetchAIResponse(params: {
         userMessage,
         imagesBase64
       );
-      bodyObj[messagesKey] = finalMessages;
+      
+      // Fix Gemini format: convert "content" to "parts"
+      if (provider?.id === "gemini" && messagesKey === "contents") {
+        bodyObj[messagesKey] = finalMessages.map((msg: any) => {
+          if (msg.content) {
+            // Convert OpenAI format to Gemini format
+            return {
+              role: msg.role === "assistant" ? "model" : "user",
+              parts: [{ text: msg.content }]
+            };
+          }
+          return msg;
+        });
+      } else {
+        bodyObj[messagesKey] = finalMessages;
+      }
     }
 
     const allVariables = {
@@ -135,18 +150,34 @@ export async function* fetchAIResponse(params: {
       SYSTEM_PROMPT: enhancedSystemPrompt || "",
     };
 
-    bodyObj = deepVariableReplacer(bodyObj, allVariables);
-    let url = deepVariableReplacer(curlJson.url || "", allVariables);
+    console.error("=== DEBUG INFO ===");
+    console.error("Provider ID:", provider?.id);
+    console.error("Selected Provider Variables:", selectedProvider.variables);
+    console.error("All Variables (after uppercase):", allVariables);
+    console.error("Original curl:", provider.curl);
+    console.error("Parsed curlJson:", curlJson);
+    console.error("==================");
 
-    // Debug logging for Gemini
-    if (provider?.id === "gemini") {
-      console.log("=== GEMINI DEBUG ===");
-      console.log("Provider ID:", provider.id);
-      console.log("Original URL from curl:", curlJson.url);
-      console.log("Final URL:", url);
-      console.log("Request body:", JSON.stringify(bodyObj, null, 2));
-      console.log("===================");
+    bodyObj = deepVariableReplacer(bodyObj, allVariables);
+    
+    // Extract URL directly from curl string to preserve query parameters
+    let url = "";
+    const curlUrlMatch = provider.curl.match(/curl\s+(?:-X\s+\w+\s+)?"([^"]+)"/);
+    if (curlUrlMatch && curlUrlMatch[1]) {
+      url = curlUrlMatch[1];
+    } else {
+      url = curlJson.url || "";
     }
+    
+    // Decode and replace variables
+    url = decodeURIComponent(url);
+    url = deepVariableReplacer(url, allVariables);
+
+    console.error("=== AFTER REPLACEMENT ===");
+    console.error("Final URL:", url);
+    console.error("Has API_KEY in URL?", url.includes("key=AIza"));
+    console.error("Request body:", JSON.stringify(bodyObj, null, 2));
+    console.error("========================");
 
     const headers = deepVariableReplacer(curlJson.header || {}, allVariables);
     headers["Content-Type"] = "application/json";
