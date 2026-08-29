@@ -127,26 +127,10 @@ pub fn run() {
             // Configure window to stay visible (Windows)
             #[cfg(target_os = "windows")]
             {
-                use tauri::Listener;
-                
                 if let Some(main_window) = app.get_webview_window("main") {
-                    // Ensure window stays visible even when losing focus
+                    // Ensure window stays always on top
                     let _ = main_window.set_always_on_top(true);
-                    
-                    // Listen for visibility changes and prevent auto-hide
-                    let window_for_event = main_window.clone();
-                    main_window.on_window_event(move |event| {
-                        match event {
-                            tauri::WindowEvent::Focused(false) => {
-                                // Window lost focus - keep it visible by re-showing
-                                println!("[Window] Lost focus, forcing visibility...");
-                                let _ = window_for_event.show();
-                            }
-                            _ => {}
-                        }
-                    });
-                    
-                    println!("Configured window for persistent visibility");
+                    println!("Configured window for persistent visibility (always-on-top)");
                 }
             }
             
