@@ -196,14 +196,17 @@ fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
     {
         let state = app.state::<WindowVisibility>();
         let mut is_hidden = state.is_hidden.lock().unwrap();
+        
+        // Check current visibility before toggling
+        let was_hidden = *is_hidden;
         *is_hidden = !*is_hidden;
 
         if let Err(e) = window.emit("toggle-window-visibility", *is_hidden) {
             eprintln!("Failed to emit toggle-window-visibility event: {}", e);
         }
 
-        if !*is_hidden {
-            // Showing the window
+        if was_hidden {
+            // Was hidden, now showing
             if let Err(e) = window.show() {
                 eprintln!("Failed to show window: {}", e);
             }
@@ -214,7 +217,7 @@ fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
                 eprintln!("Failed to emit focus-text-input event: {}", e);
             }
         } else {
-            // Hiding the window - explicitly call hide()
+            // Was visible, now hiding
             if let Err(e) = window.hide() {
                 eprintln!("Failed to hide window: {}", e);
             }
