@@ -4,6 +4,7 @@ mod api;
 mod capture;
 mod db;
 mod shortcuts;
+mod tray;
 mod window;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager, WebviewWindow};
@@ -113,6 +114,11 @@ pub fn run() {
             speaker::get_audio_sample_rate,
         ])
         .setup(|app| {
+            // Setup system tray
+            if let Err(e) = tray::setup_system_tray(app.handle()) {
+                eprintln!("Failed to setup system tray: {}", e);
+            }
+            
             // Setup main window positioning
             window::setup_main_window(app).expect("Failed to setup main window");
             #[cfg(target_os = "macos")]

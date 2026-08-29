@@ -46,6 +46,13 @@
     "resources": ["info.plist", "pluely.desktop"],
     "macOS": { "minimumSystemVersion": "10.13" }
   },
+  "tray": {
+    "id": "main",
+    "iconPath": "icons/icon.png",
+    "iconAsTemplate": false,
+    "menuOnLeftClick": true,
+    "tooltip": "Pluely AI Assistant"
+  },
   "plugins": {
     "sql": {
       "preload": ["sqlite:pluely.db"]
