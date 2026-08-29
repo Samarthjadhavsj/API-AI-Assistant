@@ -130,6 +130,17 @@ pub fn run() {
                 if let Some(main_window) = app.get_webview_window("main") {
                     // Ensure window stays always on top
                     let _ = main_window.set_always_on_top(true);
+                    
+                    // Add comprehensive event logging to catch what's hiding the window
+                    main_window.on_window_event(|event| {
+                        println!("[WINDOW EVENT] {:?}", event);
+                        
+                        // Log specifically when window loses focus
+                        if let tauri::WindowEvent::Focused(false) = event {
+                            println!("[CRITICAL] Window lost focus - checking for auto-hide");
+                        }
+                    });
+                    
                     println!("Configured window for persistent visibility (always-on-top)");
                 }
             }
