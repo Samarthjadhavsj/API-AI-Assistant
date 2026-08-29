@@ -45,7 +45,7 @@ export const AI_PROVIDERS = [
     curl: `curl -X POST "https://generativelanguage.googleapis.com/v1beta/models/{{MODEL}}:generateContent?key={{API_KEY}}" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "contents": [{"role": "user", "parts": [{"text": "{{SYSTEM_PROMPT}}\\n\\n{{TEXT}}"}]}]
+    "contents": [{"role": "user", "parts": [{"text": "{{SYSTEM_PROMPT}}\\n\\n{{TEXT}}"}, {"inline_data": {"mime_type": "image/png", "data": "{{IMAGE}}"}}]}]
   }'`,
     responseContentPath: "candidates[0].content.parts[0].text",
     streaming: false,
