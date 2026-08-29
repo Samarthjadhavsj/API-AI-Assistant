@@ -7,7 +7,7 @@ mod shortcuts;
 mod tray;
 mod window;
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Manager, WebviewWindow};
+use tauri::Manager;
 use tauri_plugin_posthog::{init as posthog_init, PostHogConfig, PostHogOptions};
 use tokio::task::JoinHandle;
 mod speaker;
@@ -34,6 +34,7 @@ fn get_app_version() -> String {
 pub fn run() {
     // Get PostHog API key
     let posthog_api_key = option_env!("POSTHOG_API_KEY").unwrap_or("").to_string();
+    #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
     let mut builder = tauri::Builder::default()
         .plugin(
             tauri_plugin_sql::Builder::default()
@@ -70,6 +71,7 @@ pub fn run() {
     {
         builder = builder.plugin(tauri_nspanel::init());
     }
+    #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
     let mut builder = builder
         .invoke_handler(tauri::generate_handler![
             get_app_version,
