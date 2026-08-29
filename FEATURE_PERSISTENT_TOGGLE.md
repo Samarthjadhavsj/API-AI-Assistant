@@ -24,56 +24,61 @@ This feature prevents the toggle window from auto-hiding when you click outside 
 
 ## 📋 Solution
 
-### Option 1: Always-On-Top Mode (Recommended)
-Make the window stay on top of other windows, so it's always visible.
+**Approach**: Set window to always-on-top + ensure window only hides on explicit `Shift+\` press, not on focus loss.
 
-**Pros**:
-- Window always visible
-- Easy to reference AI responses while working
-- Works perfectly with your workflow
+### Changes Made:
 
-**Cons**:
-- Might cover parts of the browser
-- User needs to manually close with `Shift+\` when done
+1. **`tauri.conf.json`**:
+   - Set `alwaysOnTop: true` (window stays on top of other apps)
 
-### Option 2: Manual Close Only
-Window stays visible until user explicitly closes it with `Shift+\`.
-
-**Pros**:
-- Window doesn't hide automatically
-- User has full control
-
-**Cons**:
-- Window might get lost behind other windows
-- Need to use `Alt+Tab` to find it
-
-### Option 3: Toggle Always-On-Top Setting
-Add a user setting to choose the behavior.
+2. **`shortcuts.rs`** (Windows-specific):
+   - Added explicit `window.hide()` call when user presses `Shift+\` to hide
+   - Window only hides when explicitly toggled, not when losing focus
 
 ---
 
-## 🔧 Implementation
+## 🔧 Technical Details
 
-I'll implement **Option 1** (Always-On-Top) as the default, with the existing toggle in Settings to turn it off if needed.
+### Before:
+- Window had `alwaysOnTop: false`
+- On Windows, when toggle pressed, it would emit event but not explicitly hide
+- Window would disappear when clicking outside (auto-hide behavior)
 
-### Changes Needed:
-
-1. **Set `alwaysOnTop: true` by default** in `tauri.conf.json`
-2. **Remove auto-hide on focus loss** (Windows behavior)
-3. **Keep manual toggle working** (`Shift+\` to show/hide)
-
-This way:
-- Window stays visible when clicking browser ✅
-- User can still hide it manually with `Shift+\` ✅
-- User can disable always-on-top in Settings if they want ✅
+### After:
+- Window has `alwaysOnTop: true`
+- On Windows, when toggle pressed to hide, explicitly calls `window.hide()`
+- Window stays visible when clicking other apps
+- Only hides when user presses `Shift+\` again
 
 ---
 
-## 📝 Files to Modify
+## 🧪 Testing Plan
 
-1. `src-tauri/tauri.conf.json` - Set `alwaysOnTop: true`
-2. `src-tauri/src/shortcuts.rs` - Remove auto-hide on focus loss (if any)
+### Build & Test:
+1. Stop current dev server
+2. Build the app: `npm run tauri dev`
+3. Test the feature:
+   - Press `Shift+\` - window should open
+   - Type "hello" and get response
+   - Click on browser window
+   - ✅ **Pluely window should stay visible on top!**
+   - Press `Shift+\` again - window should hide
+   - Press `Shift+\` again - window should show
+
+### Push to GitHub:
+1. `git add -A`
+2. `git commit -m "feat: persistent toggle window"`
+3. `git push origin feature/persistent-toggle-window`
+4. Create PR on GitHub
 
 ---
 
-Ready to implement?
+##  Files Modified
+
+1. `src-tauri/tauri.conf.json` - Set always-on-top to true
+2. `src-tauri/src/shortcuts.rs` - Added explicit hide() call for Windows
+3. `FEATURE_PERSISTENT_TOGGLE.md` - This documentation
+
+---
+
+Ready to build and test! 🚀

@@ -203,6 +203,7 @@ fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
         }
 
         if !*is_hidden {
+            // Showing the window
             if let Err(e) = window.show() {
                 eprintln!("Failed to show window: {}", e);
             }
@@ -211,6 +212,11 @@ fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
             }
             if let Err(e) = window.emit("focus-text-input", json!({})) {
                 eprintln!("Failed to emit focus-text-input event: {}", e);
+            }
+        } else {
+            // Hiding the window - explicitly call hide()
+            if let Err(e) = window.hide() {
+                eprintln!("Failed to hide window: {}", e);
             }
         }
         return;
