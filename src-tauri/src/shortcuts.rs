@@ -194,18 +194,17 @@ fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
 
     #[cfg(target_os = "windows")]
     {
-        let state = app.state::<WindowVisibility>();
         let is_visible = window.is_visible().unwrap_or(false);
 
         if is_visible {
             // Window is visible, hide it
+            println!("[TOGGLE] Hiding window (user requested)");
             if let Err(e) = window.hide() {
                 eprintln!("Failed to hide window: {}", e);
             }
-            let mut is_hidden = state.is_hidden.lock().unwrap();
-            *is_hidden = true;
         } else {
             // Window is hidden, show it
+            println!("[TOGGLE] Showing window (user requested)");
             if let Err(e) = window.show() {
                 eprintln!("Failed to show window: {}", e);
             }
@@ -215,8 +214,6 @@ fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
             if let Err(e) = window.emit("focus-text-input", json!({})) {
                 eprintln!("Failed to emit focus-text-input event: {}", e);
             }
-            let mut is_hidden = state.is_hidden.lock().unwrap();
-            *is_hidden = false;
         }
         
         // Emit event to close popovers
