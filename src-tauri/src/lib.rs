@@ -22,15 +22,14 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GWL_EXSTYLE, HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
 };
 #[cfg(target_os = "windows")]
-use windows::Win32::UI::WindowsAndMessaging::{WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW};
+use windows::Win32::UI::WindowsAndMessaging::WS_EX_TOOLWINDOW;
 
 #[cfg(target_os = "windows")]
 fn apply_overlay_style(hwnd: HWND) {
     unsafe {
         let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-        let new_style = ex_style
-            | WS_EX_NOACTIVATE.0 as isize
-            | WS_EX_TOOLWINDOW.0 as isize;
+        // Only use WS_EX_TOOLWINDOW, remove WS_EX_NOACTIVATE to allow clicks
+        let new_style = ex_style | WS_EX_TOOLWINDOW.0 as isize;
         SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_style);
 
         let _ = SetWindowPos(
@@ -42,6 +41,8 @@ fn apply_overlay_style(hwnd: HWND) {
             0,
             SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
         );
+        
+        eprintln!("[OVERLAY] Applied WS_EX_TOOLWINDOW + HWND_TOPMOST (removed WS_EX_NOACTIVATE for clickability)");
     }
 }
 
@@ -61,8 +62,23 @@ fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+#[tauri::command]
+fn resize_main_window(app: tauri::AppHandle, width: f64, height: f64) -> Result<(), String> {
+    let window = app.get_webview_window("main").ok_or("no main window")?;
+    window
+        .set_size(tauri::Size::Logical(tauri::LogicalSize { width, height }))
+        .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Fix WebView2 transparency on Windows
+    // Sets the default background color to transparent (RGBA: 0,0,0,0)
+    // This is critical because transparent: true only affects the HWND,
+    // not the embedded WebView2 control which has its own DefaultBackgroundColor property
+    #[cfg(target_os = "windows")]
+    std::env::set_var("WEBVIEW2_DEFAULT_BACKGROUND_COLOR", "00000000");
+
     // Get PostHog API key
     let posthog_api_key = option_env!("POSTHOG_API_KEY").unwrap_or("").to_string();
     #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
@@ -107,6 +123,7 @@ pub fn run() {
     let mut builder = builder
         .invoke_handler(tauri::generate_handler![
             get_app_version,
+            resize_main_window,
             window::set_window_height,
             window::open_dashboard,
             window::toggle_dashboard,
@@ -160,10 +177,11 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             {
                 if let Some(main_window) = app.get_webview_window("main") {
-                    // Apply Win32 overlay styles (WS_EX_NOACTIVATE + WS_EX_TOOLWINDOW)
+                    // Apply Win32 overlay styles (WS_EX_TOOLWINDOW only, removed WS_EX_NOACTIVATE)
                     if let Ok(hwnd) = main_window.hwnd() {
-                        apply_overlay_style(HWND(hwnd.0));
-                        println!("Applied Win32 overlay styles (WS_EX_NOACTIVATE + WS_EX_TOOLWINDOW)");
+                        let h = HWND(hwnd.0);
+                        apply_overlay_style(h);
+                        println!("Applied Win32 overlay styles (WS_EX_TOOLWINDOW + HWND_TOPMOST)");
                     }
                     
                     // Safety net: re-show window on focus loss if user didn't hide it
