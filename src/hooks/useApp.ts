@@ -72,13 +72,13 @@ export const useApp = () => {
     window.dispatchEvent(new CustomEvent("newConversation"));
   };
 
-  // WINDOWS TOGGLE WINDOW EVENT - Only for closing popovers, not hiding UI
+  // WINDOWS TOGGLE WINDOW EVENT - Only for closing popovers
   useEffect(() => {
-    const unlistenPromise = listen<boolean>(
+    const unlistenPromise = listen(
       "toggle-window-visibility",
-      (event) => {
+      () => {
         const platform = navigator.platform.toLowerCase();
-        if (typeof event.payload === "boolean" && platform.includes("win")) {
+        if (platform.includes("win")) {
           // Close any open popovers when toggling
           const popover = document.getElementById("popover-content");
           if (popover) {
