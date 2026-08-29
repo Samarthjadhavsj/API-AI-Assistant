@@ -132,12 +132,18 @@ pub fn run() {
                     let _ = main_window.set_always_on_top(true);
                     
                     // Add comprehensive event logging to catch what's hiding the window
-                    main_window.on_window_event(|event| {
+                    let window_clone = main_window.clone();
+                    main_window.on_window_event(move |event| {
                         println!("[WINDOW EVENT] {:?}", event);
                         
                         // Log specifically when window loses focus
                         if let tauri::WindowEvent::Focused(false) = event {
                             println!("[CRITICAL] Window lost focus - checking for auto-hide");
+                            
+                            // Check if window is still visible after focus loss
+                            if let Ok(visible) = window_clone.is_visible() {
+                                println!("[VISIBILITY CHECK] Window is_visible = {}", visible);
+                            }
                         }
                     });
                     
