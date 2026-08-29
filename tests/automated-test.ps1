@@ -22,7 +22,7 @@ function Test-Case {
     try {
         $result = & $TestScript
         if ($result) {
-            Write-Host "  ✓ PASS" -ForegroundColor Green
+            Write-Host "  [PASS]" -ForegroundColor Green
             $script:passCount++
             $script:testResults += [PSCustomObject]@{
                 TestId = $TestId
@@ -31,7 +31,7 @@ function Test-Case {
                 Error = $null
             }
         } else {
-            Write-Host "  ✗ FAIL" -ForegroundColor Red
+            Write-Host "  [FAIL]" -ForegroundColor Red
             $script:failCount++
             $script:testResults += [PSCustomObject]@{
                 TestId = $TestId
@@ -41,7 +41,7 @@ function Test-Case {
             }
         }
     } catch {
-        Write-Host "  ✗ ERROR: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "  [ERROR]: $($_.Exception.Message)" -ForegroundColor Red
         $script:failCount++
         $script:testResults += [PSCustomObject]@{
             TestId = $TestId
@@ -58,7 +58,7 @@ function Test-Case {
 # ============================================
 
 Write-Host "═══════════════════════════════════════════════════════" -ForegroundColor Cyan
-Write-Host "Test Suite 1: File Structure & Dependencies" -ForegroundColor Cyan
+Write-Host "Test Suite 1: File Structure and Dependencies" -ForegroundColor Cyan
 Write-Host "═══════════════════════════════════════════════════════" -ForegroundColor Cyan
 Write-Host ""
 
@@ -210,9 +210,9 @@ Write-Host ""
 
 # Exit with appropriate code
 if ($failCount -gt 0) {
-    Write-Host "⚠️  Some tests failed. Please review the results above." -ForegroundColor Yellow
+    Write-Host "[WARNING] Some tests failed. Please review the results above." -ForegroundColor Yellow
     exit 1
 } else {
-    Write-Host "✅ All tests passed!" -ForegroundColor Green
+    Write-Host "[OK] All tests passed!" -ForegroundColor Green
     exit 0
 }
