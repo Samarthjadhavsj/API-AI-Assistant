@@ -6,9 +6,9 @@ export const DEFAULT_SHORTCUT_ACTIONS: ShortcutAction[] = [
     name: "Toggle Dashboard",
     description: "Open/Close the dashboard window",
     defaultKey: {
-      macos: "cmd+shift+d",
-      windows: "ctrl+shift+d",
-      linux: "ctrl+shift+d",
+      macos: "cmd+d",
+      windows: "shift+d",
+      linux: "shift+d",
     },
   },
   {
@@ -17,8 +17,8 @@ export const DEFAULT_SHORTCUT_ACTIONS: ShortcutAction[] = [
     description: "Show/Hide the main window",
     defaultKey: {
       macos: "cmd+backslash",
-      windows: "ctrl+backslash",
-      linux: "ctrl+backslash",
+      windows: "shift+backslash",
+      linux: "shift+backslash",
     },
   },
   {
@@ -26,9 +26,9 @@ export const DEFAULT_SHORTCUT_ACTIONS: ShortcutAction[] = [
     name: "Refocus Input Box",
     description: "Bring Pluely forward and place the cursor in the input area",
     defaultKey: {
-      macos: "cmd+shift+i",
-      windows: "ctrl+shift+i",
-      linux: "ctrl+shift+i",
+      macos: "cmd+i",
+      windows: "shift+i",
+      linux: "shift+i",
     },
   },
   {
@@ -37,8 +37,8 @@ export const DEFAULT_SHORTCUT_ACTIONS: ShortcutAction[] = [
     description: "Move overlay with arrow keys (hold to move continuously)",
     defaultKey: {
       macos: "cmd",
-      windows: "ctrl",
-      linux: "ctrl",
+      windows: "shift",
+      linux: "shift",
     },
   },
   {
@@ -46,9 +46,9 @@ export const DEFAULT_SHORTCUT_ACTIONS: ShortcutAction[] = [
     name: "System Audio",
     description: "Toggle system audio capture",
     defaultKey: {
-      macos: "cmd+shift+m",
-      windows: "ctrl+shift+m",
-      linux: "ctrl+shift+m",
+      macos: "cmd+m",
+      windows: "shift+m",
+      linux: "shift+m",
     },
   },
   {
@@ -56,9 +56,9 @@ export const DEFAULT_SHORTCUT_ACTIONS: ShortcutAction[] = [
     name: "Voice Input",
     description: "Start voice recording",
     defaultKey: {
-      macos: "cmd+shift+a",
-      windows: "ctrl+shift+a",
-      linux: "ctrl+shift+a",
+      macos: "cmd+a",
+      windows: "shift+a",
+      linux: "shift+a",
     },
   },
   {
@@ -66,9 +66,9 @@ export const DEFAULT_SHORTCUT_ACTIONS: ShortcutAction[] = [
     name: "Screenshot",
     description: "Capture screenshot",
     defaultKey: {
-      macos: "cmd+shift+s",
-      windows: "ctrl+shift+s",
-      linux: "ctrl+shift+s",
+      macos: "cmd+s",
+      windows: "shift+s",
+      linux: "shift+s",
     },
   },
 ];
