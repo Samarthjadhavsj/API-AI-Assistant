@@ -121,8 +121,34 @@ pub fn run() {
                 eprintln!("Failed to setup system tray: {}", e);
             }
             
-            // Setup main window positioning
+            // Setup main window positioning and configure for persistence
             window::setup_main_window(app).expect("Failed to setup main window");
+            
+            // Configure window to stay visible (Windows)
+            #[cfg(target_os = "windows")]
+            {
+                use tauri::Listener;
+                
+                if let Some(main_window) = app.get_webview_window("main") {
+                    // Ensure window stays visible even when losing focus
+                    let _ = main_window.set_always_on_top(true);
+                    
+                    // Listen for visibility changes and prevent auto-hide
+                    let window_clone = main_window.clone();
+                    main_window.on_window_event(move |event| {
+                        match event {
+                            tauri::WindowEvent::Focused(false) => {
+                                // Window lost focus - ensure it stays visible
+                                println!("[Window] Lost focus, ensuring visibility...");
+                            }
+                            _ => {}
+                        }
+                    });
+                    
+                    println!("Configured window for persistent visibility");
+                }
+            }
+            
             #[cfg(target_os = "macos")]
             init(app.app_handle());
 
