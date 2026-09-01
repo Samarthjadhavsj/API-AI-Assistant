@@ -31,9 +31,13 @@ export function AudioVisualizer({ stream, isRecording }: AudioVisualizerProps) {
   const cleanup = () => {
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = 0;
     }
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
+    const audioContext = audioContextRef.current;
+    audioContextRef.current = null;
+    analyserRef.current = null;
+    if (audioContext && audioContext.state !== "closed") {
+      void audioContext.close().catch(() => undefined);
     }
   };
 
@@ -85,6 +89,12 @@ export function AudioVisualizer({ stream, isRecording }: AudioVisualizerProps) {
       const audioContext = new AudioContext();
       audioContextRef.current = audioContext;
 
+      // getUserMedia resolves asynchronously, after the click activation can
+      // expire in WebView2. Resume explicitly so the analyser receives samples.
+      if (audioContext.state === "suspended") {
+        await audioContext.resume();
+      }
+
       const analyser = audioContext.createAnalyser();
       analyser.fftSize = AUDIO_CONFIG.FFT_SIZE;
       analyser.smoothingTimeConstant = AUDIO_CONFIG.SMOOTHING;
@@ -132,7 +142,7 @@ export function AudioVisualizer({ stream, isRecording }: AudioVisualizerProps) {
     if (!canvas || !ctx || !analyserRef.current) return;
 
     const dpr = window.devicePixelRatio || 1;
-    ctx.scale(dpr, dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const analyser = analyserRef.current;
     const bufferLength = analyser.frequencyBinCount;

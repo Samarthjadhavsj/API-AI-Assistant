@@ -1,260 +1,236 @@
-# API AI Assistant
+# Ultra-Minimal Hey Frank
 
-<div align="center">
-
-<img src="/images/app-image.png" alt="API AI Assistant" width="100%" />
-
-### A privacy-first AI assistant that works seamlessly during meetings, interviews, and conversations.
-
-**Lightweight • Invisible • Powerful**
-
-[Download](#-download) • [Features](#-features) • [Documentation](#-documentation)
-
-</div>
+**Ultra-lightweight stealth AI assistant for private use.**
 
 ---
 
-## Overview
+## Features
 
-API AI Assistant is a lightweight desktop application that provides real-time AI assistance with complete privacy and stealth. Built with Tauri and React, it delivers native performance in a ~10MB package while remaining invisible during screen shares and video calls.
-
-**Key Highlights:**
-- **Ultra-lightweight** — Only ~10MB total size
-- **Privacy-first** — All data stored locally, direct API calls
-- **Invisible mode** — Undetectable in screen shares and recordings
-- **Cross-platform** — macOS, Windows, and Linux support
-- **Flexible** — Works with any AI provider via simple configuration
+- 🕵️ **Ultra Stealth Mode** — Invisible in screen recordings & video calls
+- 🎯 **Single Toggle** — One shortcut: `Shift+\` (show/hide)
+- 🚫 **No Taskbar Icon** — Completely hidden from taskbar
+- 🔒 **Content Protected** — OS-level screen capture protection
+- 💬 **AI Chat** — Direct API calls to your chosen AI provider
+- 💾 **Local Storage** — Everything stored locally, zero telemetry
 
 ---
 
-## ✨ Features
+## Quick Start
 
-### Stealth Mode
-Translucent overlay window that sits above all applications while remaining invisible in video calls, screen shares, and screenshots. Perfect for meetings, interviews, and presentations.
-
-### System Audio Capture
-Record and transcribe system audio in real-time. Capture audio from meetings, presentations, or any sound playing on your computer with automatic voice activity detection.
-
-**Shortcut:** `Cmd+Shift+M` (macOS) / `Ctrl+Shift+M` (Windows/Linux)
-
-### Voice Input
-Convert speech to text using advanced STT providers including OpenAI Whisper, ElevenLabs, Groq, and custom providers. Hands-free interaction with automatic voice detection.
-
-**Shortcut:** `Cmd+Shift+A` (macOS) / `Ctrl+Shift+A` (Windows/Linux)
-
-### Screenshot Analysis
-Capture full screen or select specific areas for AI visual analysis. Choose between manual mode (capture multiple screenshots) or auto mode (instant AI analysis).
-
-**Shortcut:** `Cmd+Shift+S` (macOS) / `Ctrl+Shift+S` (Windows/Linux)
-
-### File Attachments
-Attach multiple files to conversations for analysis, review, or context. Supports documents, images, code files, and text-based content with drag-and-drop functionality.
-
-### Custom System Prompts
-Create unlimited system prompts to control AI behavior. Define personas, writing styles, and specialized knowledge domains. Switch between prompts instantly.
-
-### Conversation History
-All conversations stored locally in SQLite. Search, continue, export as markdown, or delete anytime. Complete control over your data.
-
----
-
-## 🚀 Download
-
-<div align="center">
-
-### Latest Release
-
-[![macOS](https://img.shields.io/badge/macOS-Download-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/YOUR_USERNAME/api-AI-Assistant/releases)
-[![Windows](https://img.shields.io/badge/Windows-Download-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/YOUR_USERNAME/api-AI-Assistant/releases)
-[![Linux](https://img.shields.io/badge/Linux-Download-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/YOUR_USERNAME/api-AI-Assistant/releases)
-
-**Available formats:** `.dmg` (macOS) • `.msi` `.exe` (Windows) • `.deb` `.rpm` `.AppImage` (Linux)
-
-</div>
-
----
-
-## 📋 Prerequisites
-
-Before installation, ensure all required system dependencies are installed:
-
-**[Tauri Prerequisites](https://v2.tauri.app/start/prerequisites/)** — Essential packages including WebKitGTK (Linux), system libraries, and other dependencies.
-
-**Requirements:**
-- Node.js v18 or higher
-- Rust (latest stable)
-- npm or yarn
-
----
-
-## 🛠 Installation
-
-### From Source
+### 1. Install Dependencies
 
 ```bash
-# Clone the repository
-git clone https://github.com/YOUR_USERNAME/api-AI-Assistant.git
-cd api-AI-Assistant
-
-# Install dependencies
 npm install
+```
 
-# Start development
+### 2. Configure AI Provider
+
+1. Launch the app
+2. Go to Dev Space (settings)
+3. Add your AI API provider (OpenAI, Claude, etc.)
+4. Set your API key
+
+### 3. Run Development
+
+```bash
 npm run tauri dev
 ```
 
-### Build
+### 4. Build for Production
 
 ```bash
-# Build for production
 npm run tauri build
 ```
 
-Installers will be created in `src-tauri/target/release/bundle/`
+Binary will be in: `src-tauri/target/release/bundle/`
 
 ---
 
-## 📖 Documentation
+## Usage
 
-### Quick Start
+### Toggle Window
+```
+Press: Shift+\
+```
 
-1. **Launch** the application
-2. **Configure** your AI provider in Dev Space
-3. **Set** your API key
-4. **Create** or select a system prompt
-5. **Start** using keyboard shortcuts for instant access
+Window will appear → Ask AI → Press again to hide
 
-### Keyboard Shortcuts
+### Stealth Features
 
-| Action | macOS | Windows/Linux |
-|--------|-------|---------------|
-| Toggle Dashboard | `Cmd+Shift+D` | `Ctrl+Shift+D` |
-| Toggle Window | `Cmd+\` | `Ctrl+\` |
-| Focus Input | `Cmd+Shift+I` | `Ctrl+Shift+I` |
-| System Audio | `Cmd+Shift+M` | `Ctrl+Shift+M` |
-| Voice Input | `Cmd+Shift+A` | `Ctrl+Shift+A` |
-| Screenshot | `Cmd+Shift+S` | `Ctrl+Shift+S` |
-
-All shortcuts are customizable in Settings.
-
-### Configuration
-
-#### AI Providers
-
-Configure any LLM provider using curl commands in Dev Space:
-
-**Supported providers:**
-- OpenAI
-- Anthropic Claude
-- Google Gemini
-- xAI Grok
-- Mistral AI
-- Cohere
-- Perplexity
-- Groq
-- Ollama
-- Custom endpoints
-
-**Dynamic variables:**
-- `{{TEXT}}` — User input
-- `{{IMAGE}}` — Base64 image data
-- `{{SYSTEM_PROMPT}}` — System instructions
-- `{{MODEL}}` — Model name
-- `{{API_KEY}}` — API key
-
-#### STT Providers
-
-Configure speech-to-text providers:
-
-**Supported providers:**
-- OpenAI Whisper
-- ElevenLabs
-- Groq Whisper
-- Google Speech-to-Text
-- Deepgram
-- Azure Speech
-- Custom endpoints
+- **Screen Share Safe**: Won't appear in Zoom/Teams/OBS recordings
+- **No Taskbar**: No icon when hidden (skipTaskbar: true)
+- **Content Protected**: OS-level protection from capture
+- **Always-on-Top**: Stays visible when shown
 
 ---
 
-## 🔒 Privacy
+## Configuration
 
-**Local Storage** — All conversations stored in local SQLite database. No cloud sync, no external servers.
+All settings in: `src-tauri/tauri.conf.json`
 
-**Direct API Calls** — Requests go directly from your device to your chosen AI provider. No middleware, no proxies.
+```json
+{
+  "skipTaskbar": true,      // Hide from taskbar
+  "contentProtected": true, // Prevent screen capture
+  "transparent": true,      // Window transparency
+  "visible": false         // Starts hidden
+}
+```
 
-**Zero Telemetry** — No analytics, no tracking, no data collection of any kind.
+### Shortcut Configuration
 
-**Secure Credentials** — API keys stored in encrypted secure storage, separate from application data.
+File: `src/config/shortcuts.ts`
 
-**Offline Capable** — Full functionality without internet except for AI provider API calls.
-
----
-
-## 🎯 Use Cases
-
-- **Job Interviews** — Get real-time information without detection
-- **Sales Calls** — Access product details instantly
-- **Technical Meetings** — Reference documentation seamlessly
-- **Presentations** — Learning assistance invisible to audience
-- **Design Reviews** — Analyze screenshots and get suggestions
-- **Live Coding** — Debug and get syntax help in stealth
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Please follow these guidelines:
-
-✅ **Accepted:**
-- Bug fixes
-- Performance improvements
-- Documentation updates
-- Code quality enhancements
-
-❌ **Not Accepted:**
-- New feature requests via PR
-- Large UI overhauls
-- New AI/STT providers (use custom configuration instead)
-
-### How to Contribute
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b fix/bug-name`)
-3. Commit your changes (`git commit -m 'Fix: description'`)
-4. Push to the branch (`git push origin fix/bug-name`)
-5. Open a Pull Request
+```typescript
+{
+  "toggle_window": {
+    "action_id": "toggle_window",
+    "keys": "shift+backslash"  // Shift+\
+  }
+}
+```
 
 ---
 
-## 📄 License
+## Technical Details
 
-This project is licensed under the **GNU General Public License v3.0** — see the [LICENSE](LICENSE) file for details.
+### Architecture
+
+- **Frontend**: React + TypeScript + Vite
+- **Backend**: Rust + Tauri
+- **Database**: SQLite (local)
+- **Size**: ~10MB total
+
+### Files Structure
+
+```
+src/                 # Frontend (React)
+src-tauri/          # Backend (Rust)
+  ├── src/
+  │   ├── lib.rs         # Main app logic
+  │   ├── shortcuts.rs   # Keyboard shortcuts
+  │   ├── window.rs      # Window management
+  │   └── tray.rs        # System tray
+  └── tauri.conf.json    # App configuration
+```
+
+### Key Features Removed
+
+- ❌ Dashboard window
+- ❌ Screenshot shortcuts
+- ❌ Multiple keyboard shortcuts
+- ❌ Complex UI elements
+- ❌ Telemetry/analytics
+
+### What Remains
+
+- ✅ Single toggle shortcut (Shift+\)
+- ✅ AI chat interface
+- ✅ Stealth mode (content protection + no taskbar)
+- ✅ Local database
+- ✅ System tray (minimal)
 
 ---
 
-## 🙏 Acknowledgments
+## Privacy
 
-Built with:
-- [Tauri](https://tauri.app/) — Desktop framework
-- [React](https://reactjs.org/) — UI framework
-- [shadcn/ui](https://ui.shadcn.com/) — UI components
-- [@ricky0123/vad-react](https://github.com/ricky0123/vad) — Voice activity detection
-
----
-
-<div align="center">
-
-### Developed for Knowledge
-
-**Created by SAM**
-
-*A lightweight, privacy-first alternative for AI-powered assistance*
+- **Zero Telemetry**: No tracking, no analytics
+- **Local Storage**: SQLite database on your machine
+- **Direct API Calls**: Your device → AI provider (no middleware)
+- **No Cloud Sync**: Everything stays on your computer
 
 ---
 
-[![GitHub](https://img.shields.io/badge/GitHub-Repository-black?style=flat&logo=github)](https://github.com/YOUR_USERNAME/api-AI-Assistant)
-[![License](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.1.8-green.svg)](package.json)
+## Use Cases
 
-</div>
+### Interview/Exam Assistance
+- Press `Shift+\` → Window appears
+- Ask AI question
+- Get answer
+- Press `Shift+\` → Window hides
+- **Result**: Screen recording shows nothing
+
+### Meeting Support
+- Keep app open but hidden
+- Toggle when you need quick info
+- Invisible to screen share participants
+
+### General Privacy
+- Use Ollama for 100% offline AI
+- No process monitoring concerns
+- Rename `hey-frank.exe` to blend in (e.g., "Microsoft Teams Helper.exe")
+
+---
+
+## Detection Evasion
+
+### What's Protected
+
+✅ **Visual Detection**
+- Screen recordings (OBS, Bandicam, etc.)
+- Screenshot tools (Snipping Tool, etc.)
+- Video conferencing (Zoom, Teams, Google Meet)
+
+✅ **Hidden from Taskbar**
+- No icon in Windows taskbar
+- No tray icon (optional, can be disabled)
+
+### What's NOT Protected
+
+❌ **Process Detection**
+- Task Manager shows "hey-frank.exe"
+- Process monitoring tools can detect
+- **Solution**: Rename exe or use Ollama (offline)
+
+❌ **Network Detection**
+- API calls visible in network logs
+- **Solution**: Use Ollama for offline mode
+
+---
+
+## Offline Mode
+
+Use Ollama for zero network traffic:
+
+1. Install Ollama: https://ollama.ai
+2. Run: `ollama run llama2`
+3. Configure endpoint: `http://localhost:11434`
+4. **Result**: 100% offline AI, zero detection
+
+---
+
+## License
+
+GPL-3.0 — Free and open source
+
+---
+
+## Disclaimer
+
+⚠️ **Important**: This tool is for **educational and personal productivity** purposes only.
+
+- Using this in proctored exams may violate academic integrity policies
+- Screen monitoring software (e.g., Proctorio, ProctorU) may detect process activity
+- Check your institution's/organization's policies before use
+- The authors are not responsible for misuse or policy violations
+
+**Recommended use**: Personal learning, interview preparation, meeting support with consent.
+
+---
+
+## Build & Run
+
+```bash
+# Development
+npm run tauri dev
+
+# Production build
+npm run tauri build
+
+# Output location
+src-tauri/target/release/bundle/
+```
+
+---
+
+**Built for privacy-conscious productivity.** 🕵️

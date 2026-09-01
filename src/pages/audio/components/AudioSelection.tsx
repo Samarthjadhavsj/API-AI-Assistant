@@ -60,9 +60,7 @@ export const AudioSelection = () => {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
       });
-      setTimeout(async () => {
-        stream.getTracks().forEach((track) => track.stop());
-      }, 2000);
+      stream.getTracks().forEach((track) => track.stop());
 
       // Enumerate all audio devices
       const allDevices = await navigator.mediaDevices.enumerateDevices();

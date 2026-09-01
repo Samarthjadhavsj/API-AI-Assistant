@@ -10,8 +10,6 @@ use tokio::time::{sleep, Duration};
 #[cfg(target_os = "macos")]
 use tauri_nspanel::ManagerExt;
 
-use crate::window::create_dashboard_window;
-
 // State for overlay window - tracks if user intentionally hid it
 pub struct OverlayState {
     pub user_hidden: Arc<AtomicBool>,
@@ -41,28 +39,6 @@ impl Default for RegisteredShortcuts {
         RegisteredShortcuts {
             shortcuts: Mutex::new(HashMap::new()),
         }
-    }
-}
-
-pub struct LicenseState {
-    has_active_license: AtomicBool,
-}
-
-impl Default for LicenseState {
-    fn default() -> Self {
-        LicenseState {
-            has_active_license: AtomicBool::new(false),
-        }
-    }
-}
-
-impl LicenseState {
-    pub fn is_active(&self) -> bool {
-        self.has_active_license.load(Ordering::Relaxed)
-    }
-
-    pub fn set_active(&self, active: bool) {
-        self.has_active_license.store(active, Ordering::Relaxed);
     }
 }
 
@@ -112,43 +88,16 @@ pub fn setup_global_shortcuts<R: Runtime>(
 
 /// Handle shortcut action based on action_id
 pub fn handle_shortcut_action<R: Runtime>(app: &AppHandle<R>, action_id: &str) {
+    // Only toggle_window shortcut is active now
     match action_id {
-        "toggle_dashboard" => handle_toggle_dashboard(app),
         "toggle_window" => handle_toggle_window(app),
-        "focus_input" => handle_focus_input(app),
-        "move_window_up" => handle_move_window(app, "up"),
-        "move_window_down" => handle_move_window(app, "down"),
-        "move_window_left" => handle_move_window(app, "left"),
-        "move_window_right" => handle_move_window(app, "right"),
-        "audio_recording" => handle_audio_shortcut(app),
-        "screenshot" => handle_screenshot_shortcut(app),
-        "system_audio" => handle_system_audio_shortcut(app),
-        custom_action => {
-            // Emit custom action event for frontend to handle
-            if let Some(window) = app.get_webview_window("main") {
-                if let Err(e) = window.emit(
-                    "custom-shortcut-triggered",
-                    json!({ "action": custom_action }),
-                ) {
-                    eprintln!("Failed to emit custom shortcut event: {}", e);
-                }
-            }
+        _ => {
+            eprintln!("Unknown shortcut action: {}", action_id);
         }
     }
 }
 
 pub fn start_move_window<R: Runtime>(app: &AppHandle<R>, direction: &str) {
-    {
-        let license_state = app.state::<LicenseState>();
-        if !license_state.is_active() {
-            eprintln!(
-                "Ignoring move_window start for direction '{}' - license inactive",
-                direction
-            );
-            return;
-        }
-    }
-
     let state = app.state::<MoveWindowState>();
     let mut tasks = match state.tasks.lock() {
         Ok(guard) => guard,
@@ -210,6 +159,9 @@ fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
     {
         let state = app.state::<OverlayState>();
         let is_visible = window.is_visible().unwrap_or(false);
+
+        println!("[TOGGLE DEBUG] is_visible from Tauri: {}", is_visible);
+        println!("[TOGGLE DEBUG] user_hidden state: {}", state.user_hidden.load(Ordering::SeqCst));
 
         if is_visible {
             // Window is visible, hide it
@@ -285,57 +237,7 @@ fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
-/// Handle audio shortcut
-fn handle_audio_shortcut<R: Runtime>(app: &AppHandle<R>) {
-    if let Some(window) = app.get_webview_window("main") {
-        // Ensure window is visible
-        if let Ok(false) = window.is_visible() {
-            if let Err(_e) = window.show() {
-                return;
-            }
-            if let Err(e) = window.set_focus() {
-                eprintln!("Failed to focus window: {}", e);
-            }
-        }
-
-        // Emit event to start audio recording
-        if let Err(e) = window.emit("start-audio-recording", json!({})) {
-            eprintln!("Failed to emit audio recording event: {}", e);
-        }
-    }
-}
-
 /// Handle screenshot shortcut
-fn handle_screenshot_shortcut<R: Runtime>(app: &AppHandle<R>) {
-    if let Some(window) = app.get_webview_window("main") {
-        // Emit event to trigger screenshot - frontend will determine auto/manual mode
-        if let Err(e) = window.emit("trigger-screenshot", json!({})) {
-            eprintln!("Failed to emit screenshot event: {}", e);
-        }
-    }
-}
-
-/// Handle system audio shortcut
-fn handle_system_audio_shortcut<R: Runtime>(app: &AppHandle<R>) {
-    if let Some(window) = app.get_webview_window("main") {
-        // Ensure window is visible
-        if let Ok(false) = window.is_visible() {
-            if let Err(e) = window.show() {
-                eprintln!("Failed to show window: {}", e);
-                return;
-            }
-            if let Err(e) = window.set_focus() {
-                eprintln!("Failed to focus window: {}", e);
-            }
-        }
-
-        // Emit event to toggle system audio capture - frontend will determine current state
-        if let Err(e) = window.emit("toggle-system-audio", json!({})) {
-            eprintln!("Failed to emit system audio event: {}", e);
-        }
-    }
-}
-
 /// Tauri command to get all registered shortcuts
 #[tauri::command]
 pub fn get_registered_shortcuts<R: Runtime>(
@@ -362,19 +264,9 @@ pub fn update_shortcuts<R: Runtime>(
 
     let mut shortcuts_to_register = Vec::new();
 
-    let has_license = {
-        let license_state = app.state::<LicenseState>();
-        license_state.is_active()
-    };
-
     for (action_id, binding) in &config.bindings {
         if binding.enabled && !binding.key.is_empty() {
             if action_id == "move_window" {
-                if !has_license {
-                    eprintln!("Skipping move_window registration - license inactive");
-                    continue;
-                }
-
                 let modifiers = binding.key.trim();
                 if modifiers.is_empty() {
                     continue;
@@ -532,20 +424,6 @@ pub fn validate_shortcut_key(key: String) -> Result<bool, String> {
     }
 }
 
-#[tauri::command]
-pub fn set_license_status<R: Runtime>(app: AppHandle<R>, has_license: bool) -> Result<(), String> {
-    {
-        let state = app.state::<LicenseState>();
-        state.set_active(has_license);
-    }
-
-    if !has_license {
-        stop_all_move_windows(&app);
-    }
-
-    Ok(())
-}
-
 /// Tauri command to set app icon visibility in dock/taskbar
 #[tauri::command]
 pub fn set_app_icon_visibility<R: Runtime>(app: AppHandle<R>, visible: bool) -> Result<(), String> {
@@ -603,52 +481,6 @@ pub fn set_always_on_top<R: Runtime>(app: AppHandle<R>, enabled: bool) -> Result
     }
 
     Ok(())
-}
-
-/// Handle toggle dashboard shortcut
-fn handle_toggle_dashboard<R: Runtime>(app: &AppHandle<R>) {
-    use tauri::Manager;
-    if let Some(dashboard_window) = app.get_webview_window("dashboard") {
-        match dashboard_window.is_visible() {
-            Ok(true) => {
-                // Window is visible, hide it
-                if let Err(e) = dashboard_window.hide() {
-                    eprintln!("Failed to hide dashboard window: {}", e);
-                }
-            }
-            Ok(false) => {
-                // Window is hidden, show and focus it
-                if let Err(e) = dashboard_window.show() {
-                    eprintln!("Failed to show dashboard window: {}", e);
-                }
-                if let Err(e) = dashboard_window.set_focus() {
-                    eprintln!("Failed to focus dashboard window: {}", e);
-                }
-            }
-            Err(e) => {
-                eprintln!("Failed to check dashboard visibility: {}", e);
-            }
-        }
-    } else {
-        // Window doesn't exist, create it
-        match create_dashboard_window(app) {
-            Ok(_) => eprintln!("Dashboard window created successfully"),
-            Err(e) => eprintln!("Failed to create dashboard window: {}", e),
-        }
-    }
-}
-
-/// Handle focus input shortcut
-fn handle_focus_input<R: Runtime>(app: &AppHandle<R>) {
-    if let Some(window) = app.get_webview_window("main") {
-        // Ensure window is visible
-        if let Ok(false) = window.is_visible() {
-            let _ = window.show();
-        }
-
-        let _ = window.set_focus();
-        let _ = window.emit("focus-text-input", json!({}));
-    }
 }
 
 fn handle_move_window<R: Runtime>(app: &AppHandle<R>, direction: &str) {

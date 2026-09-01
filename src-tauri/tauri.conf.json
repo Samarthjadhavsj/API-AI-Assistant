@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Pluely",
+  "productName": "Hey Frank",
   "version": "0.1.8",
-  "identifier": "com.srikanthnani.pluely",
+  "identifier": "com.heyfrank.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,21 +13,21 @@
     "macOSPrivateApi": true,
     "windows": [
       {
-        "title": "Pluely - AI Assistant",
+        "title": "Hey Frank - AI Assistant",
         "width": 600,
         "height": 54,
-        "decorations": true,
-        "transparent": false,
+        "decorations": false,
+        "transparent": true,
         "alwaysOnTop": true,
         "resizable": false,
         "visibleOnAllWorkspaces": true,
-        "skipTaskbar": false,
+        "skipTaskbar": true,
         "visible": false,
         "center": false,
         "contentProtected": true,
         "focus": true,
         "acceptFirstMouse": true,
-        "shadow": true
+        "shadow": false
       }
     ],
     "security": { "csp": null }
@@ -43,7 +43,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["info.plist", "pluely.desktop"],
+    "resources": ["info.plist", "hey-frank.desktop"],
     "macOS": { "minimumSystemVersion": "10.13" }
   },
   "plugins": {

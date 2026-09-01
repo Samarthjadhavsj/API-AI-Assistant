@@ -33,6 +33,7 @@ export function Markdown({ children }: MarkdownRendererProps) {
 interface HighlightedPre extends React.HTMLAttributes<HTMLPreElement> {
   children: string;
   language: string;
+  style?: React.CSSProperties;
 }
 
 interface Resource<T> {
@@ -62,7 +63,7 @@ function createResource<T>(promise: Promise<T>): Resource<T> {
 }
 
 const HighlightedPre = React.memo(
-  ({ children, language, ...props }: HighlightedPre) => {
+  ({ children, language, style, ...props }: HighlightedPre) => {
     const resource = React.useMemo(
       () =>
         createResource(
@@ -91,13 +92,13 @@ const HighlightedPre = React.memo(
     const data = resource.read();
 
     if (!data) {
-      return <pre {...props}>{children}</pre>;
+      return <pre style={style} {...props}>{children}</pre>;
     }
 
     const { tokens } = data;
 
     return (
-      <pre {...props}>
+      <pre style={style} {...props}>
         <code>
           {tokens.map((line, lineIndex) => (
             <React.Fragment key={lineIndex}>
@@ -111,7 +112,7 @@ const HighlightedPre = React.memo(
                   return (
                     <span
                       key={tokenIndex}
-                      className="text-shiki-light bg-shiki-light-bg dark:text-shiki-dark dark:bg-shiki-dark-bg"
+                      className="text-shiki-light dark:text-shiki-dark"
                       style={style}
                     >
                       {token.content}
@@ -147,7 +148,7 @@ const CodeBlock = ({
       : childrenTakeAllStringContents(children);
 
   const preClass = cn(
-    "w-full whitespace-pre-wrap rounded-md border bg-background/50 p-4 font-mono text-sm [scrollbar-width:none]",
+    "w-full whitespace-pre-wrap rounded-md border p-4 font-mono text-sm [scrollbar-width:none]",
     className
   );
 
@@ -155,12 +156,28 @@ const CodeBlock = ({
     <div className="group/code relative">
       <Suspense
         fallback={
-          <pre className={preClass} {...restProps}>
+          <pre 
+            className={preClass} 
+            style={{
+              backgroundColor: 'rgb(from var(--background) r g b / 0.3)',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
+            }}
+            {...restProps}
+          >
             {children}
           </pre>
         }
       >
-        <HighlightedPre language={language} className={preClass}>
+        <HighlightedPre 
+          language={language} 
+          className={preClass}
+          style={{
+            backgroundColor: 'rgb(from var(--background) r g b / 0.3)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+          }}
+        >
           {code}
         </HighlightedPre>
       </Suspense>
@@ -234,8 +251,11 @@ const COMPONENTS = {
     ) : (
       <code
         className={cn(
-          "font-mono [:not(pre)>&]:rounded-md [:not(pre)>&]:bg-background/50 [:not(pre)>&]:px-1 [:not(pre)>&]:py-0.5"
+          "font-mono [:not(pre)>&]:rounded-md [:not(pre)>&]:px-1 [:not(pre)>&]:py-0.5"
         )}
+        style={{
+          backgroundColor: 'rgb(from var(--background) r g b / 0.3)',
+        }}
         {...rest}
       >
         {children}
@@ -259,7 +279,7 @@ const COMPONENTS = {
     "td",
     "border border-foreground/20 px-4 py-1 text-left [&[align=center]]:text-center [&[align=right]]:text-right"
   ),
-  tr: withClass("tr", "m-0 border-t p-0 even:bg-muted/50"),
+  tr: withClass("tr", "m-0 border-t p-0"),
   p: withClass("p", "whitespace-pre-wrap my-3"),
   hr: withClass("hr", "border-foreground/20 my-6"),
   img: withClass("img", "max-w-full h-auto rounded-md my-4"),

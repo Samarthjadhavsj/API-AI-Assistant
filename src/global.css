@@ -44,6 +44,8 @@
 :root {
   --radius: 0.625rem;
   --cursor-type: default;
+  --toggle-surface-opacity: 0.9;
+  --toggle-backdrop-blur: blur(7px);
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -75,6 +77,9 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  
+  /* Simple rgba for transparent popover - light mode */
+  --popover-glass: rgba(255, 255, 255, 0.13);
 }
 
 .dark {
@@ -109,28 +114,62 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  
+  /* Simple rgba for transparent popover - dark mode */
+  --popover-glass: rgba(20, 20, 20, 0.13);
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+  
+  /* Native window is transparent by default — body must not assume opacity */
+  body, #root {
+    background: transparent !important;
+    margin: 0;
+  }
+  
   body {
-    @apply bg-background text-foreground;
+    @apply text-foreground;
   }
 }
 
-/* Apply global transparency */
-[data-slot="card"] {
-  background-color: rgb(from var(--card) r g b / var(--opacity, 1)) !important;
-  backdrop-filter: var(--backdrop-blur, none);
+/* ---- TOGGLE: transparent + frosted glass ---- */
+[data-view="toggle"] {
+  background: transparent !important;
 }
 
-[data-slot="popover-content"] {
-  background-color: rgb(
-    from var(--popover) r g b / var(--opacity, 1)
-  ) !important;
-  backdrop-filter: var(--backdrop-blur, none);
+[data-view="toggle"] [data-slot="card"] {
+  background-color: rgb(from var(--card) r g b / var(--toggle-surface-opacity)) !important;
+  backdrop-filter: var(--toggle-backdrop-blur);
+  -webkit-backdrop-filter: var(--toggle-backdrop-blur);
+  transition: background-color 150ms ease, backdrop-filter 150ms ease;
+}
+
+/* ---- DASHBOARD: force full opacity, full coverage ---- */
+[data-view="dashboard"] {
+  background-color: var(--background) !important;
+  width: 100%;
+  height: 100%;
+}
+
+[data-view="dashboard"] [data-slot="card"],
+[data-view="dashboard"] [data-slot="popover-content"],
+[data-view="dashboard"] [data-slot="scroll-area"],
+[data-view="dashboard"] [data-slot="scroll-area-viewport"] {
+  background-color: var(--card) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Force transparency on markdown syntax highlighting and tables in AI response */
+[data-slot="transparent-popover-content"] pre,
+[data-slot="transparent-popover-content"] code,
+[data-slot="transparent-popover-content"] table,
+[data-slot="transparent-popover-content"] th,
+[data-slot="transparent-popover-content"] td {
+  background-color: transparent !important;
 }
 
 * {
@@ -164,6 +203,13 @@
 
 * {
   cursor: var(--cursor-type) !important;
+}
+
+/* Settings is an interactive workspace, never a stealth surface. This scoped
+   policy also covers Radix portals, which are rendered outside the page shell. */
+html[data-cursor-policy="settings"],
+html[data-cursor-policy="settings"] * {
+  cursor: default !important;
 }
 
 html {

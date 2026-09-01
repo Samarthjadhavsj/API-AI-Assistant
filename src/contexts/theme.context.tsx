@@ -94,15 +94,20 @@ export function ThemeProvider({
     const root = window.document.documentElement;
     const opacity = (100 - transparency) / 100;
 
-    // Apply opacity to CSS variables
-    root.style.setProperty("--opacity", opacity.toString());
+    // The toggle is a transparent native window. Keep a small opaque surface
+    // even at 100% so controls remain usable against any desktop background.
+    const toggleSurfaceOpacity = Math.max(0.18, opacity);
+    const toggleBlur =
+      transparency > 0 ? `blur(${Math.round(6 + transparency / 10)}px)` : "none";
 
-    // Apply backdrop filter when transparency is active
-    if (transparency > 0) {
-      root.style.setProperty("--backdrop-blur", "blur(12px)");
-    } else {
-      root.style.setProperty("--backdrop-blur", "none");
-    }
+    // `--opacity` is retained for existing consumers. The toggle-specific
+    // variables prevent this preference from affecting the full dashboard.
+    root.style.setProperty("--opacity", opacity.toString());
+    root.style.setProperty(
+      "--toggle-surface-opacity",
+      toggleSurfaceOpacity.toString()
+    );
+    root.style.setProperty("--toggle-backdrop-blur", toggleBlur);
   }, [transparency]);
 
   const onSetTransparency = (transparency: number) => {

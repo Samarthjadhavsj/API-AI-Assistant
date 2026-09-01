@@ -33,10 +33,10 @@ pub fn setup_system_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
 
     // Build tray icon
     let app_handle = app.clone();
-    let tray = TrayIconBuilder::new()
+    let _tray = TrayIconBuilder::new()
         .icon(icon)
         .menu(&menu)
-        .menu_on_left_click(false)
+        .show_menu_on_left_click(false)
         .on_menu_event(move |app, event| match event.id.as_ref() {
             "toggle_window" => {
                 handle_toggle_window(app);
@@ -49,7 +49,7 @@ pub fn setup_system_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
             }
             _ => {}
         })
-        .on_tray_icon_event(move |tray, event| {
+        .on_tray_icon_event(move |_tray, event| {
             match event {
                 TrayIconEvent::Click {
                     button: MouseButton::Left,
@@ -88,36 +88,24 @@ fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
-/// Handle open settings (Dev Space) from tray
+/// Open the settings workspace in the existing compact assistant window.
+/// The frontend route owns resizing the main window and restores the search
+/// bar when the user presses Back.
 fn handle_open_settings<R: Runtime>(app: &AppHandle<R>) {
-    // Check if dashboard window exists
-    if let Some(dashboard) = app.get_webview_window("dashboard") {
-        // If exists, show and focus it
-        if let Err(e) = dashboard.show() {
-            eprintln!("Failed to show dashboard: {}", e);
-        }
-        if let Err(e) = dashboard.set_focus() {
-            eprintln!("Failed to focus dashboard: {}", e);
-        }
-        
-        // Navigate to dev-space
-        if let Err(e) = dashboard.eval("window.location.href = '/dev-space'") {
-            eprintln!("Failed to navigate to dev-space: {}", e);
-        }
-    } else {
-        // If doesn't exist, create it
-        use crate::window;
-        if let Err(e) = window::create_dashboard_window(app) {
-            eprintln!("Failed to create dashboard window: {}", e);
+    if let Some(main) = app.get_webview_window("main") {
+        if let Err(e) = main.show() {
+            eprintln!("Failed to show compact settings: {}", e);
             return;
         }
-        
-        // Show and navigate
-        if let Some(dashboard) = app.get_webview_window("dashboard") {
-            let _ = dashboard.show();
-            let _ = dashboard.set_focus();
-            let _ = dashboard.eval("window.location.href = '/dev-space'");
+        if let Err(e) = main.set_focus() {
+            eprintln!("Failed to focus compact settings: {}", e);
+            return;
         }
+        if let Err(e) = main.eval("window.location.href = '/toggle/settings'") {
+            eprintln!("Failed to navigate to compact settings: {}", e);
+        }
+    } else {
+        eprintln!("Main window not found while opening compact settings");
     }
 }
 

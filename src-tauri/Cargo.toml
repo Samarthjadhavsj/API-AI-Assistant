@@ -1,12 +1,12 @@
 [package]
-name = "pluely"
+name = "hey-frank"
 version = "0.1.8"
 description = "The Open Source Alternative to Cluely - A lightning-fast, privacy-first AI assistant that works seamlessly during meetings, interviews, and conversations without anyone knowing."
 authors = ["Srikanth Nani <srikanthnani1202@gmail.com>"]
 license = "GPL-3.0"
-repository = "https://github.com/iamsrikanthnani/pluely"
-homepage = "https://github.com/iamsrikanthnani/pluely"
-documentation = "https://github.com/iamsrikanthnani/pluely/wiki"
+repository = "https://github.com/yourusername/hey-frank"
+homepage = "https://github.com/yourusername/hey-frank"
+documentation = "https://github.com/yourusername/hey-frank/wiki"
 readme = "../README.md"
 keywords = ["ai-assistant", "tauri", "desktop-app", "privacy-first", "meeting-assistant"]
 categories = ["gui", "multimedia", "accessibility", "science", "development-tools"]
@@ -18,7 +18,7 @@ edition = "2021"
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "pluely_lib"
+name = "hey_frank_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -30,7 +30,6 @@ tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
 tauri-plugin-opener = "2"
 tauri-plugin-http = "2.5.2"
 tauri-plugin-global-shortcut = "2"
-tauri-plugin-keychain = "2.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 image = "0.25.6"
@@ -40,8 +39,6 @@ cpal = "0.15.3"
 hound = "3.5.1"
 tokio = { version = "1.0", features = ["full"] }
 once_cell = "1.19.0"
-uuid = { version = "1.0", features = ["v4"] }
-reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
 dotenv = "0.15"
 futures-util = "0.3"
 anyhow = "1.0"
@@ -50,7 +47,6 @@ ringbuf = "0.4.8"
 tauri-plugin-shell = "2.3.1"
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 tauri-plugin-posthog = "0.2.4"
-tauri-plugin-machine-uid = "0.1.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 tauri-plugin-macos-permissions = "2"
@@ -62,6 +58,7 @@ wasapi = "0.19.0"
 windows = { version = "0.58", features = [
     "Win32_UI_WindowsAndMessaging",
     "Win32_Foundation",
+    "Win32_UI_Controls",
 ] }
 
 [target.'cfg(target_os = "linux")'.dependencies]

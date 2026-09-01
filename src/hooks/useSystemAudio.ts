@@ -3,10 +3,12 @@ import { useWindowResize, useGlobalShortcuts } from ".";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useApp } from "@/contexts";
-import { fetchSTT, fetchAIResponse } from "@/lib/functions";
+import { fetchAIResponse } from "@/lib/functions";
+import { fetchGeminiLiveSTT } from "@/lib/functions/gemini-live-stt.function";
 import {
   DEFAULT_QUICK_ACTIONS,
   DEFAULT_SYSTEM_PROMPT,
+  GEMINI_TRANSCRIBE_MODEL,
   STORAGE_KEYS,
 } from "@/config";
 import {
@@ -101,7 +103,6 @@ export function useSystemAudio() {
 
   const {
     selectedSttProvider,
-    allSttProviders,
     selectedAIProvider,
     allAiProviders,
     systemPrompt,
@@ -236,28 +237,21 @@ export function useSystemAudio() {
             }
             const audioBlob = new Blob([bytes], { type: "audio/wav" });
 
-            if (!selectedSttProvider.provider) {
-              setError("No speech provider selected.");
-              return;
-            }
-
-            const providerConfig = allSttProviders.find(
-              (p) => p.id === selectedSttProvider.provider
-            );
-
-            if (!providerConfig) {
-              setError("Speech provider config not found.");
+            if (!selectedSttProvider.variables.api_key?.trim()) {
+              setError("Add your Gemini API key in Speech-to-Text settings.");
               return;
             }
 
             setIsProcessing(true);
 
             // Add timeout wrapper for STT request (30 seconds)
-            const sttPromise = fetchSTT({
-              provider: providerConfig,
-              selectedProvider: selectedSttProvider,
-              audio: audioBlob,
-            });
+            const sttPromise = fetchGeminiLiveSTT(
+              audioBlob,
+              selectedSttProvider.variables.api_key,
+              undefined,
+              undefined,
+              GEMINI_TRANSCRIBE_MODEL
+            );
 
             const timeoutPromise = new Promise<string>((_, reject) => {
               setTimeout(
@@ -316,7 +310,6 @@ export function useSystemAudio() {
   }, [
     capturing,
     selectedSttProvider,
-    allSttProviders,
     conversation.messages.length,
   ]);
 

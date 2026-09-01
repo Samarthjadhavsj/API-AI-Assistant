@@ -26,7 +26,7 @@ import { CreateEditDialog } from "./CreateEditDialog";
 import { useState } from "react";
 import { PageLayout } from "@/layouts";
 
-const SystemPrompts = () => {
+export const SystemPromptsContent = () => {
   const {
     prompts,
     isLoading,
@@ -133,20 +133,6 @@ const SystemPrompts = () => {
   };
 
   /**
-   * Handle AI generation
-   */
-  const handleGenerate = (
-    generatedPrompt: string,
-    generatedPromptName: string
-  ) => {
-    setForm((prev) => ({
-      ...prev,
-      prompt: generatedPrompt,
-      name: generatedPromptName,
-    }));
-  };
-
-  /**
    * Handle selecting a prompt card
    */
   const handleCardClick = (promptId: number) => {
@@ -163,10 +149,7 @@ const SystemPrompts = () => {
   );
 
   return (
-    <PageLayout
-      title="System Prompts"
-      description="Manage your AI behavior profiles and create new ones"
-    >
+    <>
       {/* Error Display */}
       {error && (
         <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/10 p-3">
@@ -279,7 +262,6 @@ const SystemPrompts = () => {
         form={form}
         setForm={setForm}
         onSave={handleSave}
-        onGenerate={handleGenerate}
         isEditing={!!form.id}
         isSaving={isSaving}
       />
@@ -292,8 +274,17 @@ const SystemPrompts = () => {
         promptName={form.name}
         onDelete={handleDeleteConfirm}
       />
-    </PageLayout>
+    </>
   );
 };
+
+const SystemPrompts = () => (
+  <PageLayout
+    title="System Prompts"
+    description="Manage your AI behavior profiles and create new ones"
+  >
+    <SystemPromptsContent />
+  </PageLayout>
+);
 
 export default SystemPrompts;

@@ -1,180 +1,94 @@
-import { useState, useRef, useEffect } from "react";
-import { Button } from "@/components";
-import { AudioVisualizer } from "@/pages/app/components/speech/audio-visualizer";
-import { shouldUsePluelyAPI, fetchSTT } from "@/lib";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { VoiceRecordingBar } from "@/pages/app/components/completion/VoiceRecordingBar";
+import { useVoiceInput } from "@/hooks/useVoiceInput";
+import { isUsableTranscript } from "@/lib/voice-recorder.utils";
+import { voiceErrorMessage } from "@/lib/voice/errors";
+import { SttResult } from "@/lib/voice/types";
 import { useApp } from "@/contexts";
-import { StopCircle, Send } from "lucide-react";
 
 interface AudioRecorderProps {
   onTranscriptionComplete: (text: string) => void;
   onCancel: () => void;
+  onError?: (message: string) => void;
 }
 
 const MAX_DURATION = 3 * 60 * 1000;
 
+/** Chat-specific presentation for the shared, complete-blob recorder lifecycle. */
 export const AudioRecorder = ({
   onTranscriptionComplete,
   onCancel,
+  onError,
 }: AudioRecorderProps) => {
-  const { selectedSttProvider, allSttProviders } = useApp();
-  const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const [duration, setDuration] = useState(0);
+  const { selectedAudioDevices } = useApp();
+  const [isSending, setIsSending] = useState(false);
+  const startedRef = useRef(false);
 
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const startTimeRef = useRef<number>(0);
-  const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const maxDurationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const handleResult = useCallback(
+    (result: SttResult) => {
+      setIsSending(false);
+      if (!isUsableTranscript(result.text)) {
+        onError?.("No speech was recognized. Please try again.");
+        onCancel();
+        return;
+      }
+      onTranscriptionComplete(result.text);
+    },
+    [onCancel, onError, onTranscriptionComplete]
+  );
+
+  const voice = useVoiceInput({
+    maxDurationMs: MAX_DURATION,
+    onResult: handleResult,
+  });
+  const voiceRef = useRef(voice);
+  voiceRef.current = voice;
 
   useEffect(() => {
-    startRecording();
-    return () => cleanup();
+    if (startedRef.current) return;
+    startedRef.current = true;
+    void voice.start(selectedAudioDevices.input || undefined);
+    // One session for this mounted recorder; cleanup is owner-scoped in useVoiceInput.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const cleanup = () => {
-    if (durationIntervalRef.current) {
-      clearInterval(durationIntervalRef.current);
-      durationIntervalRef.current = null;
-    }
-    if (maxDurationTimeoutRef.current) {
-      clearTimeout(maxDurationTimeoutRef.current);
-      maxDurationTimeoutRef.current = null;
-    }
-    if (audioStream) {
-      audioStream.getTracks().forEach((track) => track.stop());
-      setAudioStream(null);
-    }
-    if (mediaRecorderRef.current?.state === "recording") {
-      mediaRecorderRef.current.stop();
-      mediaRecorderRef.current = null;
-    }
-  };
-
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      setAudioStream(stream);
-
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm")
-        ? "audio/webm"
-        : "audio/ogg";
-
-      const recorder = new MediaRecorder(stream, { mimeType });
-      mediaRecorderRef.current = recorder;
-      audioChunksRef.current = [];
-      startTimeRef.current = Date.now();
-
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          audioChunksRef.current.push(e.data);
-        }
-      };
-
-      recorder.start(100);
-
-      durationIntervalRef.current = setInterval(() => {
-        setDuration(Date.now() - startTimeRef.current);
-      }, 100);
-
-      maxDurationTimeoutRef.current = setTimeout(() => {
-        if (mediaRecorderRef.current?.state === "recording") {
-          handleSend();
-        }
-      }, MAX_DURATION);
-    } catch (error) {
-      console.error("Failed to start recording:", error);
-      cleanup();
-      onCancel();
-    }
-  };
+  useEffect(() => {
+    if (!voice.isActiveSessionOwner) return;
+    if (voice.state !== "error" || !voice.error) return;
+    onError?.(voice.error.message);
+    onCancel();
+  }, [onCancel, onError, voice.error, voice.isActiveSessionOwner, voice.state]);
 
   const handleStop = () => {
-    cleanup();
+    voice.cancel();
     onCancel();
   };
 
   const handleSend = async () => {
-    if (!mediaRecorderRef.current || isTranscribing) return;
-
-    setIsTranscribing(true);
-
-    const mimeType = mediaRecorderRef.current.mimeType;
-    const chunks = [...audioChunksRef.current];
-
-    cleanup();
-
+    if (isSending || voice.state !== "recording") return;
+    setIsSending(true);
     try {
-      const audioBlob = new Blob(chunks, { type: mimeType });
-
-      const usePluelyAPI = await shouldUsePluelyAPI();
-      const provider = allSttProviders.find(
-        (p) => p.id === selectedSttProvider.provider
-      );
-
-      const text = await fetchSTT({
-        provider: usePluelyAPI ? undefined : provider,
-        selectedProvider: selectedSttProvider,
-        audio: audioBlob,
-      });
-
-      onTranscriptionComplete(text);
+      await voice.stop();
     } catch (error) {
-      console.error("Transcription failed:", error);
+      setIsSending(false);
+      onError?.(voiceErrorMessage(error));
       onCancel();
     }
   };
 
-  const formatTime = (ms: number) => {
-    const seconds = Math.floor(ms / 1000);
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-  };
+  const isRecording = voice.state === "recording" || voice.state === "finalizing";
+  const isInitializing = voice.state === "requestingPermission";
+  const isTranscribing = voice.state === "transcribing" || isSending;
 
   return (
-    <div className="border bg-background rounded-lg overflow-hidden">
-      <div className="h-12 relative bg-muted/20">
-        {audioStream ? (
-          <div className="h-full w-full pt-3">
-            <AudioVisualizer stream={audioStream} isRecording={true} />
-          </div>
-        ) : (
-          <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
-            Initializing...
-          </div>
-        )}
-      </div>
-      <div className="flex items-center justify-between px-4 py-2.5 border-t bg-muted/5">
-        <div className="flex items-center gap-2">
-          <div className="h-2 w-2 bg-red-500 rounded-full animate-pulse" />
-          <span className="text-sm font-mono tabular-nums font-medium">
-            {formatTime(duration)}
-          </span>
-          <span className="text-xs text-muted-foreground">/ 3:00</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            size="icon"
-            variant="outline"
-            onClick={handleStop}
-            disabled={isTranscribing}
-            className="h-8 w-8"
-            title="Stop recording"
-          >
-            <StopCircle className="h-4 w-4" />
-          </Button>
-          <Button
-            size="icon"
-            onClick={handleSend}
-            disabled={isTranscribing}
-            className="h-8 w-8"
-            title={isTranscribing ? "Sending..." : "Send to AI"}
-          >
-            <Send className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-    </div>
+    <VoiceRecordingBar
+      stream={voice.stream}
+      durationMs={voice.durationMs}
+      isInitializing={isInitializing}
+      isRecording={isRecording}
+      isTranscribing={isTranscribing}
+      onCancel={handleStop}
+      onConfirm={() => void handleSend()}
+    />
   );
 };
