@@ -1,0 +1,52 @@
+name: Greetings
+
+on:
+  issues:
+    types: [opened]
+  pull_request_target:
+    types: [opened]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  greeting:
+    name: Welcome First Time Contributors
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Greet first time contributors
+        uses: actions/first-interaction@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          
+          issue-message: |
+            👋 Hey there! Thanks for opening your first issue in Hey Frank!
+            
+            We appreciate you taking the time to report this. A maintainer will review it soon.
+            
+            In the meantime, please make sure you've:
+            - [ ] Searched for similar issues
+            - [ ] Provided all requested information
+            - [ ] Read our [Contributing Guidelines](../CONTRIBUTING.md)
+            
+            If you'd like to work on this issue yourself, feel free to comment and we'll assign it to you!
+            
+            Welcome to the community! 🎉
+            
+          pr-message: |
+            🎉 Awesome! Thanks for opening your first Pull Request in Hey Frank!
+            
+            We're excited to review your contribution. A maintainer will take a look soon.
+            
+            Please ensure your PR:
+            - [ ] Follows our [Contributing Guidelines](../CONTRIBUTING.md)
+            - [ ] Includes tests (if applicable)
+            - [ ] Updates documentation (if needed)
+            - [ ] Has a clear description
+            - [ ] Passes all CI checks
+            
+            If you have any questions, feel free to ask in the comments!
+            
+            Thanks for contributing! 🚀

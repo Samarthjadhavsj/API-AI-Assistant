@@ -1,0 +1,75 @@
+name: Mark Stale Issues and PRs
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Run daily at midnight
+  workflow_dispatch:  # Allow manual trigger
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale:
+    name: Mark Stale Issues and PRs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Mark stale issues and PRs
+        uses: actions/stale@v9
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          
+          # Issue Configuration
+          days-before-issue-stale: 30
+          days-before-issue-close: 7
+          stale-issue-message: |
+            This issue has been automatically marked as stale because it has not had recent activity. 
+            It will be closed in 7 days if no further activity occurs.
+            
+            If this issue is still relevant, please:
+            - Comment to keep it open
+            - Add more information
+            - Remove the stale label
+            
+            Thank you for your contributions!
+          close-issue-message: |
+            This issue was automatically closed because it has been stale for 7 days with no activity.
+            
+            If you believe this issue is still relevant:
+            - Reopen it with additional context
+            - Create a new issue with updated information
+          stale-issue-label: 'stale'
+          exempt-issue-labels: 'pinned,security,help-wanted,good-first-issue,enhancement'
+          
+          # Pull Request Configuration
+          days-before-pr-stale: 14
+          days-before-pr-close: 7
+          stale-pr-message: |
+            This pull request has been automatically marked as stale because it has not had recent activity.
+            It will be closed in 7 days if no further activity occurs.
+            
+            If you're still working on this PR:
+            - Push new commits
+            - Comment with your progress
+            - Request a review
+            - Remove the stale label
+            
+            Thank you for your contribution!
+          close-pr-message: |
+            This pull request was automatically closed because it has been stale for 7 days with no activity.
+            
+            If you'd like to continue this work:
+            - Reopen the PR with updates
+            - Create a new PR with rebased changes
+          stale-pr-label: 'stale'
+          exempt-pr-labels: 'pinned,security,work-in-progress,dependencies'
+          
+          # General Configuration
+          operations-per-run: 100
+          remove-stale-when-updated: true
+          ascending: false
+          
+          # Exemptions
+          exempt-all-milestones: false
+          exempt-all-assignees: false

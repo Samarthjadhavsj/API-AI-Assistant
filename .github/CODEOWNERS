@@ -1,0 +1,56 @@
+# Code Owners
+#
+# This file defines individuals or teams responsible for code in this repository.
+# Code owners are automatically requested for review when someone opens a pull request
+# that modifies code that they own.
+#
+# Learn more: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Global owners - will be requested for review on ALL PRs
+* @Samarthjadhavsj
+
+# Frontend Code
+/src/** @Samarthjadhavsj
+/src/components/** @Samarthjadhavsj
+/src/pages/** @Samarthjadhavsj
+/src/hooks/** @Samarthjadhavsj
+/src/contexts/** @Samarthjadhavsj
+/src/lib/** @Samarthjadhavsj
+
+# Backend Code (Rust/Tauri)
+/src-tauri/** @Samarthjadhavsj
+/src-tauri/src/** @Samarthjadhavsj
+/src-tauri/Cargo.toml @Samarthjadhavsj
+/src-tauri/tauri.conf.json @Samarthjadhavsj
+
+# Configuration Files
+/package.json @Samarthjadhavsj
+/package-lock.json @Samarthjadhavsj
+/tsconfig.json @Samarthjadhavsj
+/vite.config.ts @Samarthjadhavsj
+/tailwind.config.js @Samarthjadhavsj
+/components.json @Samarthjadhavsj
+
+# Documentation
+/docs/** @Samarthjadhavsj
+/*.md @Samarthjadhavsj
+/README.md @Samarthjadhavsj
+/CONTRIBUTING.md @Samarthjadhavsj
+/CHANGELOG.md @Samarthjadhavsj
+/SECURITY.md @Samarthjadhavsj
+
+# GitHub Configuration
+/.github/** @Samarthjadhavsj
+/.github/workflows/** @Samarthjadhavsj
+/.github/ISSUE_TEMPLATE/** @Samarthjadhavsj
+/.github/PULL_REQUEST_TEMPLATE.md @Samarthjadhavsj
+
+# Tests
+/tests/** @Samarthjadhavsj
+/**/*.test.ts @Samarthjadhavsj
+/**/*.test.tsx @Samarthjadhavsj
+/vitest.config.ts @Samarthjadhavsj
+
+# Build and Deployment
+/.github/workflows/release.yml @Samarthjadhavsj
+/.github/workflows/ci.yml @Samarthjadhavsj
