@@ -76,7 +76,7 @@ Write-Host ""
 
 # Step 7: Get file sizes
 $msiPath = Get-ChildItem "src-tauri\target\release\bundle\msi\*.msi" -ErrorAction SilentlyContinue | Select-Object -First 1
-$exePath = "src-tauri\target\release\hey-frank.exe"
+$exePath = "src-tauri\target\release\Frank.exe"
 
 if ($msiPath) {
     $msiSize = [math]::Round($msiPath.Length / 1MB, 2)
@@ -101,7 +101,7 @@ Write-Host "🎉 Build Complete!" -ForegroundColor Green
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Cyan
 Write-Host "1. Test the installer: src-tauri\target\release\bundle\msi\*.msi" -ForegroundColor White
-Write-Host "2. Or run portable: src-tauri\target\release\hey-frank.exe" -ForegroundColor White
+Write-Host "2. Or run portable: src-tauri\target\release\Frank.exe" -ForegroundColor White
 Write-Host "3. Press Shift+\ to toggle the window" -ForegroundColor White
 Write-Host ""
 Write-Host "Happy testing! 🚀" -ForegroundColor Cyan
