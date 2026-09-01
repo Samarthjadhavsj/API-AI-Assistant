@@ -1,236 +1,514 @@
-# Ultra-Minimal Hey Frank
+<div align="center">
 
-**Ultra-lightweight stealth AI assistant for private use.**
+# 🤖 Hey Frank - AI Assistant
+
+### Ultra-Minimal Stealth AI Assistant for Private Use
+
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL%203.0-blue.svg)](https://opensource.org/licenses/GPL-3.0)
+[![Build Status](https://github.com/Samarthjadhavsj/API-AI-Assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/Samarthjadhavsj/API-AI-Assistant/actions)
+[![Version](https://img.shields.io/badge/version-0.1.8-orange.svg)]()
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)]()
+[![Made with Rust](https://img.shields.io/badge/Made%20with-Rust-orange.svg)](https://www.rust-lang.org/)
+[![Made with React](https://img.shields.io/badge/Made%20with-React-61dafb.svg)](https://reactjs.org/)
+
+[Features](#-features) • [Quick Start](#-quick-start) • [Documentation](#-documentation) • [Contributing](#-contributing) • [License](#-license)
+
+</div>
 
 ---
 
-## Features
+## 📋 Table of Contents
 
-- 🕵️ **Ultra Stealth Mode** — Invisible in screen recordings & video calls
-- 🎯 **Single Toggle** — One shortcut: `Shift+\` (show/hide)
-- 🚫 **No Taskbar Icon** — Completely hidden from taskbar
-- 🔒 **Content Protected** — OS-level screen capture protection
-- 💬 **AI Chat** — Direct API calls to your chosen AI provider
-- 💾 **Local Storage** — Everything stored locally, zero telemetry
+- [Overview](#-overview)
+- [Features](#-features)
+- [Demo](#-demo)
+- [Quick Start](#-quick-start)
+- [Architecture](#-architecture)
+- [Configuration](#-configuration)
+- [Privacy & Security](#-privacy--security)
+- [Use Cases](#-use-cases)
+- [Development](#-development)
+- [Testing](#-testing)
+- [Contributing](#-contributing)
+- [Roadmap](#-roadmap)
+- [License](#-license)
+- [Acknowledgments](#-acknowledgments)
 
 ---
 
-## Quick Start
+## 🌟 Overview
 
-### 1. Install Dependencies
+**Hey Frank** is an ultra-lightweight, privacy-first AI assistant built with Rust and React. Designed for professionals who need discreet AI assistance during meetings, interviews, and daily workflows.
+
+### Why Hey Frank?
+
+✅ **Privacy-First** - Zero telemetry, all data stored locally  
+✅ **Ultra-Stealth** - Invisible in screen recordings and video calls  
+✅ **Lightweight** - Only ~10MB total size  
+✅ **Open Source** - GPL-3.0 licensed, fully transparent  
+✅ **Cross-Platform** - Windows, macOS, and Linux support  
+
+---
+
+## ✨ Features
+
+### 🕵️ Stealth Mode
+- **Invisible in recordings** - Won't appear in Zoom/Teams/OBS
+- **No taskbar icon** - Completely hidden when minimized
+- **Content protected** - OS-level screen capture protection
+- **Always-on-top** - Stays visible when you need it
+
+### 🎯 Ultra-Minimal Interface
+- **Single toggle shortcut** - `Shift+\` to show/hide
+- **Clean UI** - Distraction-free design
+- **Fast responses** - Direct API integration
+- **No bloat** - Only essential features
+
+### 💬 AI Capabilities
+- **Multi-provider support** - OpenAI, Claude, Gemini, and more
+- **Speech-to-text** - Voice input support
+- **Markdown rendering** - Rich text formatting
+- **Conversation history** - Local SQLite database
+- **Custom prompts** - System prompt management
+
+### 🔒 Privacy & Security
+- **Zero telemetry** - No tracking or analytics
+- **Local storage** - SQLite database on your machine
+- **Direct API calls** - No middleware or proxy servers
+- **Offline mode** - Use with Ollama for 100% offline AI
+
+---
+
+## 🎬 Demo
+
+### Application Interface
+
+<div align="center">
+
+![Hey Frank Main Interface](https://via.placeholder.com/800x500/1a1a2e/16c784?text=Main+Chat+Interface)
+*Main chat interface with AI assistant*
+
+![Stealth Mode](https://via.placeholder.com/800x500/1a1a2e/e94560?text=Stealth+Mode+Active)
+*Stealth mode - invisible in screen recordings*
+
+![Settings Panel](https://via.placeholder.com/800x500/1a1a2e/0f3460?text=Dev+Space+Settings)
+*Configuration and AI provider settings*
+
+</div>
+
+> **Note:** Replace placeholder images with actual screenshots by adding them to a `docs/images/` folder
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Node.js 18+ and npm
+- Rust 1.70+
+- Platform-specific dependencies:
+  - **Windows**: WebView2 Runtime
+  - **macOS**: Xcode Command Line Tools
+  - **Linux**: webkit2gtk-4.0-dev, libssl-dev
+
+### Installation
 
 ```bash
+# Clone the repository
+git clone https://github.com/Samarthjadhavsj/API-AI-Assistant.git
+cd API-AI-Assistant
+
+# Install dependencies
 npm install
-```
 
-### 2. Configure AI Provider
-
-1. Launch the app
-2. Go to Dev Space (settings)
-3. Add your AI API provider (OpenAI, Claude, etc.)
-4. Set your API key
-
-### 3. Run Development
-
-```bash
+# Run in development mode
 npm run tauri dev
 ```
 
-### 4. Build for Production
+### Configuration
+
+1. Launch the application
+2. Navigate to **Dev Space** (settings)
+3. Add your AI provider credentials
+4. Configure your preferred AI model
+
+### Build for Production
 
 ```bash
 npm run tauri build
 ```
 
-Binary will be in: `src-tauri/target/release/bundle/`
+📦 Binary location: `src-tauri/target/release/bundle/`
 
 ---
 
-## Usage
+## 🏗️ Architecture
 
-### Toggle Window
 ```
-Press: Shift+\
+┌─────────────────────────────────────────┐
+│           Frontend (React)              │
+│  - UI Components (shadcn/ui)           │
+│  - State Management (Context API)      │
+│  - Routing (React Router)              │
+└──────────────┬──────────────────────────┘
+               │ Tauri API Bridge
+┌──────────────┴──────────────────────────┐
+│           Backend (Rust)                │
+│  - Window Management                    │
+│  - Keyboard Shortcuts                   │
+│  - System Tray                          │
+│  - Database (SQLite)                    │
+└─────────────────────────────────────────┘
 ```
 
-Window will appear → Ask AI → Press again to hide
+### Tech Stack
 
-### Stealth Features
+**Frontend:**
+- React 19 + TypeScript
+- TailwindCSS 4 + shadcn/ui
+- React Router 7
+- Vite 7
 
-- **Screen Share Safe**: Won't appear in Zoom/Teams/OBS recordings
-- **No Taskbar**: No icon when hidden (skipTaskbar: true)
-- **Content Protected**: OS-level protection from capture
-- **Always-on-Top**: Stays visible when shown
+**Backend:**
+- Rust + Tauri 2
+- SQLite (via Tauri SQL plugin)
+- Global shortcuts
+- System tray integration
+
+**Build Tools:**
+- Vite (bundler)
+- TypeScript (type safety)
+- Vitest (testing)
 
 ---
 
-## Configuration
+## ⚙️ Configuration
 
-All settings in: `src-tauri/tauri.conf.json`
+### Window Settings
+
+Edit `src-tauri/tauri.conf.json`:
 
 ```json
 {
   "skipTaskbar": true,      // Hide from taskbar
   "contentProtected": true, // Prevent screen capture
   "transparent": true,      // Window transparency
-  "visible": false         // Starts hidden
+  "visible": false,        // Start hidden
+  "alwaysOnTop": true     // Stay on top when visible
 }
 ```
 
-### Shortcut Configuration
+### Keyboard Shortcuts
 
-File: `src/config/shortcuts.ts`
+Edit `src/config/shortcuts.ts`:
 
 ```typescript
 {
   "toggle_window": {
     "action_id": "toggle_window",
-    "keys": "shift+backslash"  // Shift+\
+    "keys": "shift+backslash"  // Customize: Shift+\
   }
 }
 ```
 
+### AI Providers
+
+Supported providers:
+- OpenAI (GPT-4, GPT-3.5)
+- Anthropic (Claude)
+- Google (Gemini)
+- Ollama (Local/Offline)
+- Custom OpenAI-compatible APIs
+
 ---
 
-## Technical Details
+## 🔒 Privacy & Security
 
-### Architecture
+### Data Protection
 
-- **Frontend**: React + TypeScript + Vite
-- **Backend**: Rust + Tauri
-- **Database**: SQLite (local)
-- **Size**: ~10MB total
+✅ **Local-First Architecture**
+- All conversations stored in local SQLite database
+- No cloud sync or external storage
+- Data never leaves your device
 
-### Files Structure
+✅ **Zero Telemetry**
+- No analytics tracking
+- No crash reporting
+- No usage statistics
+
+✅ **Direct API Communication**
+- Your device → AI provider directly
+- No middleware or proxy servers
+- API keys encrypted locally
+
+### Stealth Features
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Screen Capture Protection | OS-level content protection | ✅ Active |
+| Taskbar Hiding | No icon when minimized | ✅ Active |
+| Recording Evasion | Invisible in screen recordings | ✅ Active |
+| Process Obfuscation | Rename executable | ⚙️ Manual |
+| Offline Mode | Use Ollama for local AI | ✅ Supported |
+
+---
+
+## 💡 Use Cases
+
+### 1. Meeting Assistant
+Stay productive during virtual meetings with discreet AI support.
 
 ```
-src/                 # Frontend (React)
-src-tauri/          # Backend (Rust)
-  ├── src/
-  │   ├── lib.rs         # Main app logic
-  │   ├── shortcuts.rs   # Keyboard shortcuts
-  │   ├── window.rs      # Window management
-  │   └── tray.rs        # System tray
-  └── tauri.conf.json    # App configuration
+Scenario: Video conference on Zoom
+Action: Press Shift+\ → Ask question → Get answer → Hide
+Result: Participants see nothing
 ```
 
-### Key Features Removed
+### 2. Interview Preparation
+Quick reference during technical interviews.
 
-- ❌ Dashboard window
-- ❌ Screenshot shortcuts
-- ❌ Multiple keyboard shortcuts
-- ❌ Complex UI elements
-- ❌ Telemetry/analytics
+```
+Scenario: Coding interview with screen share
+Action: Toggle for code snippets or algorithm hints
+Result: Not visible in screen recordings
+```
 
-### What Remains
+### 3. Learning Aid
+Personal tutor for studying and research.
 
-- ✅ Single toggle shortcut (Shift+\)
-- ✅ AI chat interface
-- ✅ Stealth mode (content protection + no taskbar)
-- ✅ Local database
-- ✅ System tray (minimal)
+```
+Scenario: Self-study session
+Action: Ask questions, get explanations
+Result: Local, private, no tracking
+```
 
----
-
-## Privacy
-
-- **Zero Telemetry**: No tracking, no analytics
-- **Local Storage**: SQLite database on your machine
-- **Direct API Calls**: Your device → AI provider (no middleware)
-- **No Cloud Sync**: Everything stays on your computer
-
----
-
-## Use Cases
-
-### Interview/Exam Assistance
-- Press `Shift+\` → Window appears
-- Ask AI question
-- Get answer
-- Press `Shift+\` → Window hides
-- **Result**: Screen recording shows nothing
-
-### Meeting Support
-- Keep app open but hidden
-- Toggle when you need quick info
-- Invisible to screen share participants
-
-### General Privacy
-- Use Ollama for 100% offline AI
-- No process monitoring concerns
-- Rename `hey-frank.exe` to blend in (e.g., "Microsoft Teams Helper.exe")
-
----
-
-## Detection Evasion
-
-### What's Protected
-
-✅ **Visual Detection**
-- Screen recordings (OBS, Bandicam, etc.)
-- Screenshot tools (Snipping Tool, etc.)
-- Video conferencing (Zoom, Teams, Google Meet)
-
-✅ **Hidden from Taskbar**
-- No icon in Windows taskbar
-- No tray icon (optional, can be disabled)
-
-### What's NOT Protected
-
-❌ **Process Detection**
-- Task Manager shows "hey-frank.exe"
-- Process monitoring tools can detect
-- **Solution**: Rename exe or use Ollama (offline)
-
-❌ **Network Detection**
-- API calls visible in network logs
-- **Solution**: Use Ollama for offline mode
-
----
-
-## Offline Mode
-
-Use Ollama for zero network traffic:
-
-1. Install Ollama: https://ollama.ai
-2. Run: `ollama run llama2`
-3. Configure endpoint: `http://localhost:11434`
-4. **Result**: 100% offline AI, zero detection
-
----
-
-## License
-
-GPL-3.0 — Free and open source
-
----
-
-## Disclaimer
-
-⚠️ **Important**: This tool is for **educational and personal productivity** purposes only.
-
-- Using this in proctored exams may violate academic integrity policies
-- Screen monitoring software (e.g., Proctorio, ProctorU) may detect process activity
-- Check your institution's/organization's policies before use
-- The authors are not responsible for misuse or policy violations
-
-**Recommended use**: Personal learning, interview preparation, meeting support with consent.
-
----
-
-## Build & Run
+### 4. Offline AI (Ollama)
+100% private AI with zero network traffic.
 
 ```bash
-# Development
-npm run tauri dev
+# Install Ollama
+ollama run llama2
 
-# Production build
-npm run tauri build
-
-# Output location
-src-tauri/target/release/bundle/
+# Configure Hey Frank
+Endpoint: http://localhost:11434
+Model: llama2
 ```
 
 ---
 
-**Built for privacy-conscious productivity.** 🕵️
+## 👨‍💻 Development
+
+### Project Structure
+
+```
+API-AI-Assistant/
+├── src/                      # React frontend
+│   ├── components/          # UI components
+│   ├── pages/              # Application pages
+│   ├── hooks/              # Custom React hooks
+│   ├── contexts/           # Context providers
+│   ├── lib/                # Utilities & helpers
+│   └── config/             # Configuration files
+├── src-tauri/              # Rust backend
+│   ├── src/
+│   │   ├── lib.rs         # Main application logic
+│   │   ├── shortcuts.rs   # Keyboard shortcuts handler
+│   │   ├── window.rs      # Window management
+│   │   ├── tray.rs        # System tray
+│   │   └── capture.rs     # Screen capture logic
+│   ├── Cargo.toml         # Rust dependencies
+│   └── tauri.conf.json    # Tauri configuration
+├── .github/                # GitHub workflows & templates
+└── docs/                   # Documentation
+```
+
+### Development Commands
+
+```bash
+# Development server
+npm run dev
+
+# Run Tauri dev mode
+npm run tauri dev
+
+# Run tests
+npm test
+
+# Run tests with coverage
+npm run test:coverage
+
+# Build production
+npm run build
+npm run tauri build
+
+# Format code
+cargo fmt
+npm run format
+```
+
+### Testing
+
+```bash
+# Run all tests
+npm test
+
+# Watch mode
+npm run test:watch
+
+# Coverage report
+npm run test:coverage
+
+# UI mode
+npm run test:ui
+```
+
+See [TEST_CASES.md](./TEST_CASES.md) for detailed test documentation.
+
+---
+
+## 🧪 Testing
+
+We maintain comprehensive test coverage:
+
+- **Unit Tests**: 225+ tests
+- **Integration Tests**: Full workflow coverage
+- **Manual Test Suite**: [MANUAL_TEST_EXECUTION_GUIDE.md](./MANUAL_TEST_EXECUTION_GUIDE.md)
+- **Smoke Tests**: [SMOKE_TEST_CHECKLIST.md](./SMOKE_TEST_CHECKLIST.md)
+
+### Test Reports
+- [Automated Tests Report](./AUTOMATED_TESTS_FINAL_REPORT.md)
+- [Physical Testing Summary](./PHYSICAL_TESTING_SUMMARY.md)
+- [Test Suite Summary](./TEST_SUITE_SUMMARY.md)
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions! Please see our [Contributing Guide](./CONTRIBUTING.md) for details.
+
+### Quick Contribution Guide
+
+1. **Fork the repository**
+2. **Create a feature branch**
+   ```bash
+   git checkout -b feature/amazing-feature
+   ```
+3. **Make your changes**
+4. **Run tests**
+   ```bash
+   npm test
+   ```
+5. **Commit with conventional commits**
+   ```bash
+   git commit -m "feat: add amazing feature"
+   ```
+6. **Push and create PR**
+   ```bash
+   git push origin feature/amazing-feature
+   ```
+
+See our [Branch Strategy](./GIT_BRANCH_STRATEGY.md) and [GitHub Push Guide](./GITHUB_PUSH_GUIDE.md).
+
+---
+
+## 🗺️ Roadmap
+
+### Current Version (0.1.8)
+- ✅ Stealth mode with content protection
+- ✅ Single toggle shortcut
+- ✅ Multi-provider AI support
+- ✅ Local SQLite database
+- ✅ Voice input (STT)
+
+### Planned Features
+- 🔄 Plugin system
+- 🔄 Custom themes
+- 🔄 Mobile companion app
+- 🔄 Cloud sync (optional, encrypted)
+- 🔄 Team collaboration features
+
+See [CHANGELOG.md](./CHANGELOG.md) for version history.
+
+---
+
+## 📄 License
+
+This project is licensed under the **GNU General Public License v3.0** - see the [LICENSE](./LICENSE) file for details.
+
+### What this means:
+- ✅ Commercial use allowed
+- ✅ Modification allowed
+- ✅ Distribution allowed
+- ✅ Patent use allowed
+- ⚠️ Must disclose source
+- ⚠️ License and copyright notice required
+- ⚠️ Same license (Copyleft)
+
+---
+
+## ⚠️ Disclaimer
+
+**IMPORTANT NOTICE:**
+
+This software is provided for **educational and personal productivity purposes** only. Users are solely responsible for ensuring their use complies with:
+
+- Academic integrity policies
+- Workplace regulations
+- Professional certification rules
+- Local laws and regulations
+
+**We do NOT endorse or encourage:**
+- Cheating on exams
+- Violating proctoring systems
+- Academic dishonesty
+- Circumventing security measures
+
+**Recommended ethical uses:**
+- Personal learning and research
+- Meeting productivity (with consent)
+- Interview preparation
+- Accessibility assistance
+
+---
+
+## 🙏 Acknowledgments
+
+Built with amazing open-source technologies:
+
+- [Tauri](https://tauri.app/) - Desktop app framework
+- [React](https://react.dev/) - UI library
+- [Rust](https://www.rust-lang.org/) - Systems programming language
+- [shadcn/ui](https://ui.shadcn.com/) - UI components
+- [TailwindCSS](https://tailwindcss.com/) - CSS framework
+
+Special thanks to all [contributors](https://github.com/Samarthjadhavsj/API-AI-Assistant/graphs/contributors)!
+
+### Project Stats
+
+![GitHub Stars](https://img.shields.io/github/stars/Samarthjadhavsj/API-AI-Assistant?style=social)
+![GitHub Forks](https://img.shields.io/github/forks/Samarthjadhavsj/API-AI-Assistant?style=social)
+![GitHub Issues](https://img.shields.io/github/issues/Samarthjadhavsj/API-AI-Assistant)
+![GitHub Pull Requests](https://img.shields.io/github/issues-pr/Samarthjadhavsj/API-AI-Assistant)
+![GitHub Contributors](https://img.shields.io/github/contributors/Samarthjadhavsj/API-AI-Assistant)
+![Last Commit](https://img.shields.io/github/last-commit/Samarthjadhavsj/API-AI-Assistant)
+
+---
+
+## 📞 Support & Contact
+
+- 📧 Email: samarthjadhavsj121@gmail.com
+- 🐛 Issues: [GitHub Issues](https://github.com/Samarthjadhavsj/API-AI-Assistant/issues)
+- 💬 Discussions: [GitHub Discussions](https://github.com/Samarthjadhavsj/API-AI-Assistant/discussions)
+
+---
+
+<div align="center">
+
+### ⭐ Star this repo if you find it helpful!
+
+Made with ❤️ for privacy-conscious productivity
+
+[Report Bug](https://github.com/Samarthjadhavsj/API-AI-Assistant/issues) • [Request Feature](https://github.com/Samarthjadhavsj/API-AI-Assistant/issues) • [Documentation](./docs/)
+
+</div>
