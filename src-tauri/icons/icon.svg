@@ -1,0 +1,37 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background Circle with Gradient -->
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366f1;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#8b5cf6;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="textGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#e0e7ff;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Rounded Rectangle Background -->
+  <rect width="512" height="512" rx="100" fill="url(#bgGradient)"/>
+  
+  <!-- Chat Bubble Shape -->
+  <path d="M256 100C167.634 100 96 161.249 96 236C96 278.5 115 316.5 145 343L128 396L185 370C206 377 230 381 256 381C344.366 381 416 319.751 416 236C416 161.249 344.366 100 256 100Z" 
+        fill="rgba(255,255,255,0.15)" 
+        stroke="rgba(255,255,255,0.3)" 
+        stroke-width="3"/>
+  
+  <!-- "HF" Text -->
+  <text x="256" y="280" 
+        font-family="Arial, sans-serif" 
+        font-size="160" 
+        font-weight="bold" 
+        fill="url(#textGradient)" 
+        text-anchor="middle" 
+        dominant-baseline="middle">HF</text>
+  
+  <!-- Small AI Sparkle Elements -->
+  <circle cx="380" cy="150" r="8" fill="#fbbf24" opacity="0.8"/>
+  <circle cx="410" cy="180" r="6" fill="#fbbf24" opacity="0.6"/>
+  <circle cx="135" cy="160" r="7" fill="#fbbf24" opacity="0.7"/>
+  <circle cx="360" cy="340" r="6" fill="#fbbf24" opacity="0.6"/>
+</svg>
