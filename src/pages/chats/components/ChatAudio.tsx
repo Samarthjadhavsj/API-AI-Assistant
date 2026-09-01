@@ -17,8 +17,8 @@ export const ChatAudio = ({
   setIsRecording,
   disabled,
 }: ChatAudioProps) => {
-  const { selectedSttProvider, pluelyApiEnabled } = useApp();
-  const isProviderConfigured = pluelyApiEnabled || selectedSttProvider.provider;
+  const { selectedSttProvider } = useApp();
+  const isProviderConfigured = Boolean(selectedSttProvider.variables.api_key?.trim());
 
   const handleMicClick = () => {
     if (!isProviderConfigured) {
@@ -56,15 +56,15 @@ export const ChatAudio = ({
       >
         <div className="text-sm">
           <div className="font-semibold text-orange-600 mb-1">
-            Speech Provider Required
+          Gemini API Key Required
           </div>
           <p className="text-muted-foreground">
             <div className="mt-2 flex items-center gap-1 text-orange-600">
               <InfoIcon size={16} />
-              <span>Provider not configured</span>
+              <span>Gemini transcription is not configured</span>
             </div>
             <span className="block mt-2">
-              Configure a speech provider in settings to enable voice input.
+              Add your Gemini API key in Speech-to-Text settings to enable voice input.
             </span>
           </p>
         </div>

@@ -42,8 +42,9 @@ export const AI_PROVIDERS = [
   {
     id: "gemini",
     name: "Google Gemini",
-    curl: `curl -X POST "https://generativelanguage.googleapis.com/v1beta/models/{{MODEL}}:generateContent?key={{API_KEY}}" \\
+    curl: `curl -X POST "https://generativelanguage.googleapis.com/v1beta/models/{{MODEL}}:generateContent" \\
   -H "Content-Type: application/json" \\
+  -H "x-goog-api-key: {{API_KEY}}" \\
   -d '{
     "contents": [{"role": "user", "parts": [{"text": "{{SYSTEM_PROMPT}}\\n\\n{{TEXT}}"}, {"inline_data": {"mime_type": "image/png", "data": "{{IMAGE}}"}}]}]
   }'`,

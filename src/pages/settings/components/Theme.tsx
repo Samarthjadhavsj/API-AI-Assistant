@@ -1,4 +1,4 @@
-import { useApp, useTheme } from "@/contexts";
+import { useTheme } from "@/contexts";
 import { Header, Label, Slider, Button } from "@/components";
 import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
 import {
@@ -10,26 +10,17 @@ import {
 
 export const Theme = () => {
   const { theme, transparency, setTheme, onSetTransparency } = useTheme();
-  const { hasActiveLicense } = useApp();
 
   return (
     <div id="theme" className="relative space-y-3">
       <Header
-        title={`Theme Customization ${
-          hasActiveLicense
-            ? ""
-            : " (You need an active license to use this feature)"
-        }`}
+        title="Theme Customization"
         description="Personalize your experience with custom theme and transparency settings"
         isMainTitle
       />
 
       {/* Theme Toggle */}
-      <div
-        className={`space-y-2 ${
-          hasActiveLicense ? "" : "opacity-60 pointer-events-none"
-        }`}
-      >
+      <div className="space-y-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div>
@@ -87,17 +78,13 @@ export const Theme = () => {
       </div>
 
       {/* Transparency Slider */}
-      <div
-        className={`space-y-2 ${
-          hasActiveLicense ? "" : "opacity-60 pointer-events-none"
-        }`}
-      >
+      <div className="space-y-2">
         <Header
-          title="Window Transparency"
-          description="Adjust the transparency level of the application window"
+          title="Toggle Window Transparency"
+          description="Adjust the compact toggle surface without changing dashboard opacity"
         />
         <div className="space-y-3">
-          <div className="flex items-center gap-4 mt-4">
+          <div className="flex items-center gap-4 pt-2">
             <Slider
               value={[transparency]}
               onValueChange={(value: number[]) => onSetTransparency(value[0])}
@@ -106,11 +93,14 @@ export const Theme = () => {
               step={1}
               className="flex-1"
             />
+            <span className="w-12 text-right text-sm tabular-nums text-muted-foreground">
+              {transparency}%
+            </span>
           </div>
 
           <p className="text-xs text-muted-foreground/70">
-            💡 Tip: Higher transparency lets you see through the window, perfect
-            for dark overlay. Changes apply immediately.
+            Higher values reveal more of your desktop. A subtle frosted layer
+            remains at the highest setting so settings controls stay readable.
           </p>
         </div>
       </div>

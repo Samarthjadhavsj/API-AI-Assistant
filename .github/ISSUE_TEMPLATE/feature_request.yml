@@ -1,0 +1,98 @@
+name: ✨ Feature Request
+description: Suggest a new feature or improvement
+title: "[Feature]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a new feature! Please fill out the information below.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Feature Description
+      description: A clear and concise description of the feature
+      placeholder: Describe the feature you'd like to see
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What problem does this feature solve?
+      placeholder: Describe the problem or pain point this feature addresses
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: How would you like this feature to work?
+      placeholder: Describe your ideal solution
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Have you considered any alternative solutions?
+      placeholder: Describe alternatives you've thought about
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Feature Category
+      description: Which category does this feature belong to?
+      options:
+        - AI Integration
+        - User Interface
+        - Window Management
+        - Keyboard Shortcuts
+        - Voice Input
+        - File Management
+        - Settings & Configuration
+        - Performance
+        - Security
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: How important is this feature to you?
+      options:
+        - Critical - I cannot use the app without this
+        - High - Very important for my workflow
+        - Medium - Would be nice to have
+        - Low - Just an idea
+    validations:
+      required: true
+
+  - type: textarea
+    id: mockups
+    attributes:
+      label: Mockups / Examples
+      description: If applicable, add mockups, screenshots, or examples
+      placeholder: Drag and drop images or provide links
+
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Would you like to contribute?
+      description: Are you willing to work on this feature?
+      options:
+        - label: I'm willing to submit a PR to implement this feature
+          required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Any other information that might be relevant
+      placeholder: Add any other context about the feature here

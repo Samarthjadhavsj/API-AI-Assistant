@@ -14,7 +14,10 @@ export const DashboardLayout = () => {
         console.log("Reset");
       }}
     >
-      <div className="relative flex h-screen w-screen overflow-hidden bg-background">
+      <div 
+        data-slot="page-surface" 
+        className="bg-background min-h-screen w-full relative flex h-screen overflow-hidden"
+      >
         {/* Draggable region */}
         <div
           className="absolute left-0 right-0 top-0 z-50 h-10 select-none"

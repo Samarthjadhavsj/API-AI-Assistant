@@ -1,13 +1,11 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-mod activate;
-mod api;
 mod capture;
 mod db;
 mod shortcuts;
 mod tray;
 mod window;
 use std::sync::{Arc, Mutex};
-use tauri::Manager;
+use tauri::{Listener, Manager};
 use tauri_plugin_posthog::{init as posthog_init, PostHogConfig, PostHogOptions};
 use tokio::task::JoinHandle;
 mod speaker;
@@ -18,21 +16,14 @@ use speaker::VadConfig;
 use windows::Win32::Foundation::HWND;
 #[cfg(target_os = "windows")]
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos,
-    GWL_EXSTYLE, HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
+    SetWindowPos, HWND_TOPMOST, SWP_NOMOVE, SWP_NOACTIVATE, SWP_NOSIZE, SWP_SHOWWINDOW,
 };
-#[cfg(target_os = "windows")]
-use windows::Win32::UI::WindowsAndMessaging::{WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW};
 
 #[cfg(target_os = "windows")]
-fn apply_overlay_style(hwnd: HWND) {
+fn ensure_topmost(hwnd: HWND) {
     unsafe {
-        let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-        let new_style = ex_style
-            | WS_EX_NOACTIVATE.0 as isize
-            | WS_EX_TOOLWINDOW.0 as isize;
-        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_style);
-
+        // Use SWP_NOACTIVATE to prevent focus stealing while keeping topmost
+        // This is crucial for transparent windows to not auto-hide
         let _ = SetWindowPos(
             hwnd,
             HWND_TOPMOST,
@@ -40,8 +31,9 @@ fn apply_overlay_style(hwnd: HWND) {
             0,
             0,
             0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE,
         );
+        eprintln!("[OVERLAY] Ensured HWND_TOPMOST with SWP_NOACTIVATE");
     }
 }
 
@@ -61,8 +53,23 @@ fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+#[tauri::command]
+fn resize_main_window(app: tauri::AppHandle, width: f64, height: f64) -> Result<(), String> {
+    let window = app.get_webview_window("main").ok_or("no main window")?;
+    window
+        .set_size(tauri::Size::Logical(tauri::LogicalSize { width, height }))
+        .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Fix WebView2 transparency on Windows
+    // Sets the default background color to transparent (RGBA: 0,0,0,0)
+    // This is critical because transparent: true only affects the HWND,
+    // not the embedded WebView2 control which has its own DefaultBackgroundColor property
+    #[cfg(target_os = "windows")]
+    std::env::set_var("WEBVIEW2_DEFAULT_BACKGROUND_COLOR", "00000000");
+
     // Get PostHog API key
     let posthog_api_key = option_env!("POSTHOG_API_KEY").unwrap_or("").to_string();
     #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
@@ -78,12 +85,10 @@ pub fn run() {
             is_hidden: Mutex::new(false),
         })
         .manage(shortcuts::RegisteredShortcuts::default())
-        .manage(shortcuts::LicenseState::default())
         .manage(shortcuts::MoveWindowState::default())
         .manage(shortcuts::OverlayState::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
-        .plugin(tauri_plugin_keychain::init())
         .plugin(tauri_plugin_shell::init()) // Add shell plugin
         .plugin(posthog_init(PostHogConfig {
             api_key: posthog_api_key,
@@ -97,8 +102,7 @@ pub fn run() {
                 ..Default::default()
             }),
             ..Default::default()
-        }))
-        .plugin(tauri_plugin_machine_uid::init());
+        }));
     #[cfg(target_os = "macos")]
     {
         builder = builder.plugin(tauri_nspanel::init());
@@ -107,9 +111,8 @@ pub fn run() {
     let mut builder = builder
         .invoke_handler(tauri::generate_handler![
             get_app_version,
+            resize_main_window,
             window::set_window_height,
-            window::open_dashboard,
-            window::toggle_dashboard,
             window::move_window,
             capture::capture_to_base64,
             capture::start_screen_capture,
@@ -119,24 +122,9 @@ pub fn run() {
             shortcuts::get_registered_shortcuts,
             shortcuts::update_shortcuts,
             shortcuts::validate_shortcut_key,
-            shortcuts::set_license_status,
             shortcuts::set_app_icon_visibility,
             shortcuts::set_always_on_top,
             shortcuts::exit_app,
-            activate::activate_license_api,
-            activate::deactivate_license_api,
-            activate::validate_license_api,
-            activate::mask_license_key_cmd,
-            activate::get_checkout_url,
-            activate::secure_storage_save,
-            activate::secure_storage_get,
-            activate::secure_storage_remove,
-            api::transcribe_audio,
-            api::chat_stream_response,
-            api::fetch_models,
-            api::create_system_prompt,
-            api::check_license_status,
-            api::get_activity,
             speaker::start_system_audio_capture,
             speaker::stop_system_audio_capture,
             speaker::manual_stop_continuous,
@@ -160,33 +148,36 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             {
                 if let Some(main_window) = app.get_webview_window("main") {
-                    // Apply Win32 overlay styles (WS_EX_NOACTIVATE + WS_EX_TOOLWINDOW)
+                    // Apply Win32 topmost style on Windows
                     if let Ok(hwnd) = main_window.hwnd() {
-                        apply_overlay_style(HWND(hwnd.0));
-                        println!("Applied Win32 overlay styles (WS_EX_NOACTIVATE + WS_EX_TOOLWINDOW)");
+                        ensure_topmost(HWND(hwnd.0));
+                        println!("Applied HWND_TOPMOST for persistent visibility");
                     }
                     
-                    // Safety net: re-show window on focus loss if user didn't hide it
+                    // Re-apply topmost on focus loss ONLY if window is actually visible and not hidden by user
                     let overlay_state = app.state::<shortcuts::OverlayState>();
                     let user_hidden = overlay_state.user_hidden.clone();
                     let window_for_handler = main_window.clone();
                     
                     main_window.on_window_event(move |event| {
-                        if let tauri::WindowEvent::Focused(false) = event {
-                            println!("[FOCUS LOST] Checking if we should re-show...");
-                            
-                            // Only re-show if user didn't explicitly hide it
-                            if !user_hidden.load(std::sync::atomic::Ordering::SeqCst) {
-                                println!("[AUTO-RESTORE] Re-showing window and re-applying overlay styles");
-                                let _ = window_for_handler.show();
+                        match event {
+                            tauri::WindowEvent::Focused(false) => {
+                                // Only re-ensure topmost if user hasn't hidden the window
+                                let is_hidden = user_hidden.load(std::sync::atomic::Ordering::SeqCst);
                                 
-                                // Re-apply overlay styles
-                                if let Ok(hwnd) = window_for_handler.hwnd() {
-                                    apply_overlay_style(HWND(hwnd.0));
+                                // Check if window is actually visible before re-ensuring topmost
+                                let is_visible = window_for_handler.is_visible().unwrap_or(false);
+                                
+                                if !is_hidden && is_visible {
+                                    println!("[FOCUS LOST] Re-ensuring topmost (window visible and not user-hidden)");
+                                    if let Ok(hwnd) = window_for_handler.hwnd() {
+                                        ensure_topmost(HWND(hwnd.0));
+                                    }
+                                } else {
+                                    println!("[FOCUS LOST] Window is hidden or not visible, skipping topmost");
                                 }
-                            } else {
-                                println!("[FOCUS LOST] User hid window, not restoring");
                             }
+                            _ => {}
                         }
                     });
                     
@@ -194,15 +185,25 @@ pub fn run() {
                 }
             }
             
-            #[cfg(target_os = "macos")]
+            #[cfg(target_os="macos")]
             init(app.app_handle());
 
-            let app_handle = app.handle();
-            if app_handle.get_webview_window("dashboard").is_none() {
-                if let Err(e) = window::create_dashboard_window(&app_handle) {
-                    eprintln!("Failed to create dashboard window on startup: {}", e);
+            // Listen for hide-window-clicked event from frontend
+            let app_handle_for_event = app.handle().clone();
+            app.listen("hide-window-clicked", move |_event| {
+                println!("[X BUTTON] Hide window clicked from frontend");
+                if let Some(window) = app_handle_for_event.get_webview_window("main") {
+                    let state = app_handle_for_event.state::<shortcuts::OverlayState>();
+                    state.user_hidden.store(true, std::sync::atomic::Ordering::SeqCst);
+                    if let Err(e) = window.hide() {
+                        eprintln!("Failed to hide window from X button: {}", e);
+                    } else {
+                        println!("[X BUTTON] Window hidden successfully");
+                    }
                 }
-            }
+            });
+
+            // Dashboard creation removed - only toggle window exists now
 
             #[cfg(desktop)]
             {

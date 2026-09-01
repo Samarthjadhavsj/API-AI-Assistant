@@ -58,7 +58,6 @@ export const useChatCompletion = (
     selectedSttProvider,
     allSttProviders,
     selectedAudioDevices,
-    hasActiveLicense,
   } = useApp();
 
   const [state, setState] = useState<ChatCompletionState>({
@@ -561,7 +560,7 @@ export const useChatCompletion = (
             setState((prev) => ({
               ...prev,
               error:
-                "Screen Recording permission required. Please enable it by going to System Settings > Privacy & Security > Screen & System Audio Recording. If you don't see Pluely in the list, click the '+' button to add it. If it's already listed, make sure it's enabled. Then restart the app.",
+                "Screen Recording permission required. Please enable it by going to System Settings > Privacy & Security > Screen & System Audio Recording. If you don't see Hey Frank in the list, click the '+' button to add it. If it's already listed, make sure it's enabled. Then restart the app.",
             }));
             setIsScreenshotLoading(false);
             screenshotInitiatedByThisContext.current = false;
@@ -584,17 +583,7 @@ export const useChatCompletion = (
         // Reset flag after processing
         screenshotInitiatedByThisContext.current = false;
       } else {
-        // Selection Mode: Open overlay to select an area
-        // Only allow if user has active license
-        if (!hasActiveLicense) {
-          setState((prev) => ({
-            ...prev,
-            error: "Selection mode requires an active license",
-          }));
-          setIsScreenshotLoading(false);
-          screenshotInitiatedByThisContext.current = false;
-          return;
-        }
+        // Selection Mode: Open overlay to select an area.
         isProcessingScreenshotRef.current = false;
         await invoke("start_screen_capture");
       }
@@ -610,7 +599,7 @@ export const useChatCompletion = (
         setIsScreenshotLoading(false);
       }
     }
-  }, [handleScreenshotSubmit, hasActiveLicense]);
+  }, [handleScreenshotSubmit]);
 
   useEffect(() => {
     let unlisten: any;
@@ -714,6 +703,5 @@ export const useChatCompletion = (
     selectedSttProvider,
     allSttProviders,
     selectedAudioDevices,
-    hasActiveLicense,
   };
 };

@@ -1,11 +1,12 @@
 import {
   AI_PROVIDERS,
   DEFAULT_SYSTEM_PROMPT,
+  GEMINI_TRANSCRIBE_MODEL,
+  GEMINI_TRANSCRIBE_PROVIDER_ID,
   SPEECH_TO_TEXT_PROVIDERS,
   STORAGE_KEYS,
 } from "@/config";
 import { getPlatform, safeLocalStorage, trackAppStart } from "@/lib";
-import { getShortcutsConfig } from "@/lib/storage";
 import {
   getCustomizableState,
   setCustomizableState,
@@ -97,7 +98,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     variables: {},
   });
 
-  // STT Providers
+  // STT is intentionally Gemini-only. Keep the legacy custom-provider state
+  // for backwards-compatible settings storage, but never expose it to voice.
   const [customSttProviders, setCustomSttProviders] = useState<TYPE_PROVIDER[]>(
     []
   );
@@ -105,8 +107,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     provider: string;
     variables: Record<string, string>;
   }>({
-    provider: "",
-    variables: {},
+    provider: GEMINI_TRANSCRIBE_PROVIDER_ID,
+    variables: { model: GEMINI_TRANSCRIBE_MODEL, api_key: "" },
   });
 
   const [screenshotConfiguration, setScreenshotConfiguration] =
@@ -120,48 +122,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [customizable, setCustomizable] = useState<CustomizableState>(
     DEFAULT_CUSTOMIZABLE_STATE
   );
-  const [hasActiveLicense, setHasActiveLicense] = useState<boolean>(false);
-
-  // Pluely API State
-  const [pluelyApiEnabled, setPluelyApiEnabledState] = useState<boolean>(
-    false // Disabled by default - use direct AI providers
-  );
-
-  const getActiveLicenseStatus = async () => {
-    const response: { is_active: boolean } = await invoke(
-      "validate_license_api"
-    );
-    setHasActiveLicense(response.is_active);
-    // Check if the auto configs are enabled
-    const autoConfigsEnabled = localStorage.getItem("auto-configs-enabled");
-    if (response.is_active && !autoConfigsEnabled) {
-      setScreenshotConfiguration({
-        mode: "auto",
-        autoPrompt: "Analyze the screenshot and provide insights",
-        enabled: false,
-      });
-      // Set the flag to true so that we don't change the mode again
-      localStorage.setItem("auto-configs-enabled", "true");
-    }
-  };
-
-  useEffect(() => {
-    const syncLicenseState = async () => {
-      try {
-        await invoke("set_license_status", {
-          hasLicense: hasActiveLicense,
-        });
-
-        const config = getShortcutsConfig();
-        await invoke("update_shortcuts", { config });
-      } catch (error) {
-        console.error("Failed to synchronize license state:", error);
-      }
-    };
-
-    syncLicenseState();
-  }, [hasActiveLicense]);
-
   // Function to load AI, STT, system prompt and screenshot config data from storage
   const loadData = () => {
     // Load system prompt
@@ -201,15 +161,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
     setCustomAiProviders(aiList);
 
-    // Load custom STT providers
-    const savedStt = safeLocalStorage.getItem(
-      STORAGE_KEYS.CUSTOM_SPEECH_PROVIDERS
-    );
-    let sttList: TYPE_PROVIDER[] = [];
-    if (savedStt) {
-      sttList = validateAndProcessCurlProviders(savedStt, "STT");
-    }
-    setCustomSttProviders(sttList);
+    // Other STT providers are no longer part of this build.
+    setCustomSttProviders([]);
 
     // Load selected AI provider
     const savedSelectedAi = safeLocalStorage.getItem(
@@ -224,7 +177,25 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       STORAGE_KEYS.SELECTED_STT_PROVIDER
     );
     if (savedSelectedStt) {
-      setSelectedSttProvider(JSON.parse(savedSelectedStt));
+      try {
+        const saved = JSON.parse(savedSelectedStt) as {
+          variables?: Record<string, string>;
+        };
+        // Retain an existing API key while migrating every old provider
+        // selection into the sole supported Gemini workflow.
+        setSelectedSttProvider({
+          provider: GEMINI_TRANSCRIBE_PROVIDER_ID,
+          variables: {
+            api_key: saved.variables?.api_key || "",
+            model: GEMINI_TRANSCRIBE_MODEL,
+          },
+        });
+      } catch {
+        setSelectedSttProvider({
+          provider: GEMINI_TRANSCRIBE_PROVIDER_ID,
+          variables: { api_key: "", model: GEMINI_TRANSCRIBE_MODEL },
+        });
+      }
     }
 
     // Load customizable state
@@ -262,13 +233,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       }
     }
 
-    // Load Pluely API enabled state
-    const savedPluelyApiEnabled = safeLocalStorage.getItem(
-      STORAGE_KEYS.PLUELY_API_ENABLED
-    );
-    if (savedPluelyApiEnabled !== null) {
-      setPluelyApiEnabledState(savedPluelyApiEnabled === "true");
-    }
   };
 
   const updateCursor = (type: CursorType | undefined) => {
@@ -288,6 +252,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         return;
       }
 
+      // The main window normally follows the stealth cursor preference, but
+      // settings is an interactive route and must never hide the pointer.
+      if (window.location.pathname.startsWith("/toggle/settings")) {
+        document.documentElement.style.setProperty("--cursor-type", "default");
+        return;
+      }
+
       // For overlay windows (main, capture-overlay-*)
       const safeType = type || "invisible";
       const cursorValue = type === "invisible" ? "none" : safeType;
@@ -300,16 +271,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   // Load data on mount
   useEffect(() => {
     const initializeApp = async () => {
-      // Load license and data
-      await getActiveLicenseStatus();
-
       // Track app start
       try {
         const appVersion = await invoke<string>("get_app_version");
-        const storage = await invoke<{
-          instance_id: string;
-        }>("secure_storage_get");
-        await trackAppStart(appVersion, storage.instance_id || "");
+        await trackAppStart(appVersion, "");
       } catch (error) {
         console.debug("Failed to track app start:", error);
       }
@@ -444,7 +409,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   // Computed all STT providers
   const allSttProviders: TYPE_PROVIDER[] = [
     ...SPEECH_TO_TEXT_PROVIDERS,
-    ...customSttProviders,
   ];
 
   const onSetSelectedAIProvider = ({
@@ -474,12 +438,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     provider: string;
     variables: Record<string, string>;
   }) => {
-    if (provider && !allSttProviders.some((p) => p.id === provider)) {
+    if (provider !== GEMINI_TRANSCRIBE_PROVIDER_ID) {
       console.warn(`Invalid STT provider ID: ${provider}`);
       return;
     }
 
-    setSelectedSttProvider((prev) => ({ ...prev, provider, variables }));
+    setSelectedSttProvider({
+      provider: GEMINI_TRANSCRIBE_PROVIDER_ID,
+      variables: {
+        api_key: variables.api_key || "",
+        model: GEMINI_TRANSCRIBE_MODEL,
+      },
+    });
   };
 
   // Toggle handlers
@@ -529,12 +499,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     loadData();
   };
 
-  const setPluelyApiEnabled = (enabled: boolean) => {
-    setPluelyApiEnabledState(enabled);
-    safeLocalStorage.setItem(STORAGE_KEYS.PLUELY_API_ENABLED, String(enabled));
-    loadData();
-  };
-
   // Create the context value (extend IContextType accordingly)
   const value: IContextType = {
     systemPrompt,
@@ -554,11 +518,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     toggleAlwaysOnTop,
     toggleAutostart,
     loadData,
-    pluelyApiEnabled,
-    setPluelyApiEnabled,
-    hasActiveLicense,
-    setHasActiveLicense,
-    getActiveLicenseStatus,
     selectedAudioDevices,
     setSelectedAudioDevices,
     setCursorType,

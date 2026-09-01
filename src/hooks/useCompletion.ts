@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useWindowResize } from "./useWindow";
 import { useGlobalShortcuts } from "@/hooks";
+import { invokeVoiceShortcutToggle } from "@/hooks/useVoiceInput";
 import { MAX_FILES } from "@/config";
 import { useApp } from "@/contexts";
 import {
@@ -70,8 +71,6 @@ export const useCompletion = () => {
     currentConversationId: null,
     conversationHistory: [],
   });
-  const [micOpen, setMicOpen] = useState(false);
-  const [enableVAD, setEnableVAD] = useState(false);
   const [messageHistoryOpen, setMessageHistoryOpen] = useState(false);
   const [isFilesPopoverOpen, setIsFilesPopoverOpen] = useState(false);
   const [isScreenshotLoading, setIsScreenshotLoading] = useState(false);
@@ -486,7 +485,7 @@ export const useCompletion = () => {
     };
 
     const handleStorageChange = async (e: StorageEvent) => {
-      if (e.key === "pluely-conversation-selected" && e.newValue) {
+      if (e.key === "hey-frank-conversation-selected" && e.newValue) {
         try {
           const data = JSON.parse(e.newValue);
           const { id } = data;
@@ -525,14 +524,38 @@ export const useCompletion = () => {
     const files = Array.from(e.target.files || []);
     const MAX_FILES = 6;
 
+    console.log('[FILE SELECT] Selected files:', files.length);
+    console.log('[FILE SELECT] Current attached files:', state.attachedFiles.length);
+
+    let currentFileCount = state.attachedFiles.length;
+    let skippedNonImages = 0;
+
     files.forEach((file) => {
-      if (
-        file.type.startsWith("image/") &&
-        state.attachedFiles.length < MAX_FILES
-      ) {
+      console.log('[FILE SELECT] Processing file:', file.name, file.type);
+      
+      // Only accept image files
+      if (!file.type.startsWith("image/")) {
+        console.log('[FILE SELECT] Skipped non-image file:', file.name);
+        skippedNonImages++;
+        return;
+      }
+      
+      if (currentFileCount < MAX_FILES) {
+        console.log('[FILE SELECT] Adding file:', file.name);
         addFile(file);
+        currentFileCount++; // Increment count for next iteration
+      } else {
+        console.log('[FILE SELECT] Skipped file:', file.name, 'Reason: file limit reached');
       }
     });
+
+    // Show warning if non-image files were selected
+    if (skippedNonImages > 0) {
+      setState((prev) => ({
+        ...prev,
+        error: `${skippedNonImages} file(s) skipped. Only image files (PNG, JPG, GIF, etc.) are supported.`,
+      }));
+    }
 
     // Reset input so same file can be selected again
     e.target.value = "";
@@ -763,11 +786,10 @@ export const useCompletion = () => {
 
   useEffect(() => {
     resizeWindow(
-      isPopoverOpen || micOpen || messageHistoryOpen || isFilesPopoverOpen
+      isPopoverOpen || messageHistoryOpen || isFilesPopoverOpen
     );
   }, [
     isPopoverOpen,
-    micOpen,
     messageHistoryOpen,
     resizeWindow,
     isFilesPopoverOpen,
@@ -873,7 +895,7 @@ export const useCompletion = () => {
             setState((prev) => ({
               ...prev,
               error:
-                "Screen Recording permission required. Please enable it by going to System Settings > Privacy & Security > Screen & System Audio Recording. If you don't see Pluely in the list, click the '+' button to add it. If it's already listed, make sure it's enabled. Then restart the app.",
+                "Screen Recording permission required. Please enable it by going to System Settings > Privacy & Security > Screen & System Audio Recording. If you don't see Hey Frank in the list, click the '+' button to add it. If it's already listed, make sure it's enabled. Then restart the app.",
             }));
             setIsScreenshotLoading(false);
             screenshotInitiatedByThisContext.current = false;
@@ -971,11 +993,6 @@ export const useCompletion = () => {
     };
   }, []);
 
-  const toggleRecording = useCallback(() => {
-    setEnableVAD(!enableVAD);
-    setMicOpen(!micOpen);
-  }, [enableVAD, micOpen]);
-
   // Cleanup abort controller on unmount
   useEffect(() => {
     return () => {
@@ -989,14 +1006,13 @@ export const useCompletion = () => {
 
   // register callbacks for global shortcuts
   useEffect(() => {
-    globalShortcuts.registerAudioCallback(toggleRecording);
+    globalShortcuts.registerAudioCallback(invokeVoiceShortcutToggle);
     globalShortcuts.registerInputRef(inputRef.current);
     globalShortcuts.registerScreenshotCallback(captureScreenshot);
   }, [
     globalShortcuts.registerAudioCallback,
     globalShortcuts.registerInputRef,
     globalShortcuts.registerScreenshotCallback,
-    toggleRecording,
     captureScreenshot,
     inputRef,
   ]);
@@ -1016,10 +1032,6 @@ export const useCompletion = () => {
     cancel,
     reset,
     setState,
-    enableVAD,
-    setEnableVAD,
-    micOpen,
-    setMicOpen,
     currentConversationId: state.currentConversationId,
     conversationHistory: state.conversationHistory,
     loadConversation,

@@ -1,7 +1,6 @@
 import { Loader2, XIcon } from "lucide-react";
 import {
   Popover,
-  PopoverContent,
   PopoverTrigger,
   Button,
   ScrollArea,
@@ -10,6 +9,7 @@ import {
   Switch,
   CopyButton,
 } from "@/components";
+import { TransparentPopoverContent } from "@/components/ui/popover";
 import { UseCompletionReturn } from "@/types";
 import { MessageHistory } from "./MessageHistory";
 
@@ -62,20 +62,18 @@ export const Input = ({
               }`}
             />
 
-            {/* Conversation thread indicator */}
-            {currentConversationId &&
-              conversationHistory.length > 0 &&
-              !isLoading && (
-                <div className="absolute select-none right-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                  <MessageHistory
-                    conversationHistory={conversationHistory}
-                    currentConversationId={currentConversationId}
-                    onStartNewConversation={startNewConversation}
-                    messageHistoryOpen={messageHistoryOpen}
-                    setMessageHistoryOpen={setMessageHistoryOpen}
-                  />
-                </div>
-              )}
+            {/* Conversation History Icon - Always visible */}
+            {!isLoading && (
+              <div className="absolute select-none right-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                <MessageHistory
+                  conversationHistory={conversationHistory}
+                  currentConversationId={currentConversationId}
+                  onStartNewConversation={startNewConversation}
+                  messageHistoryOpen={messageHistoryOpen}
+                  setMessageHistoryOpen={setMessageHistoryOpen}
+                />
+              </div>
+            )}
 
             {/* Loading indicator */}
             {isLoading && (
@@ -87,13 +85,13 @@ export const Input = ({
         </PopoverTrigger>
 
         {/* Response Panel */}
-        <PopoverContent
+        <TransparentPopoverContent
           align="end"
           side="bottom"
-          className="w-screen p-0 border shadow-lg overflow-hidden"
+          className="w-screen p-0 border overflow-hidden"
           sideOffset={8}
         >
-          <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/30">
+          <div className="flex items-center justify-between px-4 py-2 border-b">
             <div className="flex flex-row gap-1 items-center">
               <h3 className="font-semibold text-xs select-none">
                 {keepEngaged ? "Conversation Mode" : "AI Response"}
@@ -107,7 +105,7 @@ export const Input = ({
                 <p className="text-[10px]">{`Toggle ${
                   keepEngaged ? "AI response" : "conversation mode"
                 }`}</p>
-                <span className="text-[10px] text-muted-foreground/60 bg-muted/30 px-1 py-0 rounded border border-input/50">
+                <span className="text-[10px] text-muted-foreground/60 px-1 py-0 rounded border border-input/50">
                   {navigator.platform.toLowerCase().includes("mac")
                     ? "⌘"
                     : "Ctrl"}{" "}
@@ -156,7 +154,7 @@ export const Input = ({
           <ScrollArea ref={scrollAreaRef} className="h-[calc(100vh-7rem)]">
             <div className="p-4">
               {error && (
-                <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded text-sm text-destructive">
+                <div className="mb-4 p-3 border border-destructive/20 rounded text-sm text-destructive">
                   <strong>Error:</strong> {error}
                 </div>
               )}
@@ -182,8 +180,8 @@ export const Input = ({
                           key={message.id}
                           className={`p-3 rounded-lg text-sm ${
                             message.role === "user"
-                              ? "bg-primary/10 border-l-4 border-primary"
-                              : "bg-muted/50"
+                              ? "border-l-4 border-primary"
+                              : ""
                           }`}
                         >
                           <div className="flex items-center gap-2 mb-2">
@@ -208,7 +206,7 @@ export const Input = ({
               )}
             </div>
           </ScrollArea>
-        </PopoverContent>
+        </TransparentPopoverContent>
       </Popover>
     </div>
   );

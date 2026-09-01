@@ -161,8 +161,7 @@ const Overlay: React.FC<OverlayProps> = ({ monitorIndex }) => {
         className="fixed inset-0 w-screen h-screen overflow-hidden"
         style={{
           cursor: "none",
-          backgroundColor: "rgba(15, 23, 42, 0.15)",
-          backdropFilter: "blur(0.5px)",
+          backgroundColor: "transparent",
         }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -193,7 +192,7 @@ const Overlay: React.FC<OverlayProps> = ({ monitorIndex }) => {
         {/* Selection Rectangle */}
         <div
           ref={selectionRef}
-          className="absolute border-2 border-primary-foreground bg-primary/10 rounded-3xl rounded-br-none pointer-events-none"
+          className="absolute border-2 border-primary-foreground bg-transparent rounded-3xl rounded-br-none pointer-events-none"
           style={{
             left: selectionStyle.left,
             top: selectionStyle.top,
@@ -205,7 +204,7 @@ const Overlay: React.FC<OverlayProps> = ({ monitorIndex }) => {
         />
         <div
           ref={selectionRef}
-          className="absolute border-[0.5px] border-black bg-primary/5 rounded-3xl rounded-br-none pointer-events-none"
+          className="absolute border-[0.5px] border-black/30 bg-transparent rounded-3xl rounded-br-none pointer-events-none"
           style={{
             left: selectionStyle.left,
             top: selectionStyle.top,

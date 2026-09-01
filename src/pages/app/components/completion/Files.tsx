@@ -44,6 +44,7 @@ export const Files = ({
             disabled={isLoading}
             className="cursor-pointer"
             title="Attach images"
+            data-tauri-drag-region={false}
           >
             <PaperclipIcon className="h-4 w-4" />
           </Button>

@@ -65,7 +65,7 @@ export async function* fetchAIResponse(params: {
 
     const enhancedSystemPrompt = buildEnhancedSystemPrompt(systemPrompt);
 
-    // Always use direct AI provider (Pluely API disabled)
+    // Requests are sent directly to the configured AI provider.
     if (!provider) {
       throw new Error(`Provider not provided`);
     }
@@ -150,13 +150,7 @@ export async function* fetchAIResponse(params: {
       SYSTEM_PROMPT: enhancedSystemPrompt || "",
     };
 
-    console.error("=== DEBUG INFO ===");
-    console.error("Provider ID:", provider?.id);
-    console.error("Selected Provider Variables:", selectedProvider.variables);
-    console.error("All Variables (after uppercase):", allVariables);
-    console.error("Original curl:", provider.curl);
-    console.error("Parsed curlJson:", curlJson);
-    console.error("==================");
+    // Debug logging removed
 
     bodyObj = deepVariableReplacer(bodyObj, allVariables);
     
@@ -173,11 +167,7 @@ export async function* fetchAIResponse(params: {
     url = decodeURIComponent(url);
     url = deepVariableReplacer(url, allVariables);
 
-    console.error("=== AFTER REPLACEMENT ===");
-    console.error("Final URL:", url);
-    console.error("Has API_KEY in URL?", url.includes("key=AIza"));
-    console.error("Request body:", JSON.stringify(bodyObj, null, 2));
-    console.error("========================");
+    // Debug logging removed
 
     const headers = deepVariableReplacer(curlJson.header || {}, allVariables);
     headers["Content-Type"] = "application/json";
