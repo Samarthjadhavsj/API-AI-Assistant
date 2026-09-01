@@ -43,6 +43,16 @@ const App = () => {
         className="w-screen h-screen flex overflow-hidden justify-center items-start"
       >
         <Card className="w-full flex flex-row items-center gap-2 p-2">
+          {/* App Icon on the left */}
+          <div className="shrink-0" data-tauri-drag-region={false}>
+            <img 
+              src="/icon.png" 
+              alt="Hey Frank" 
+              className="h-8 w-8 rounded-md object-contain"
+              draggable={false}
+            />
+          </div>
+          
           <div className="w-full flex flex-row gap-2 items-center">
             <Completion isHidden={isHidden} />
             <div className="flex gap-2 relative z-50" style={{ pointerEvents: 'auto' }} data-tauri-drag-region={false}>
