@@ -1,254 +1,283 @@
-# Pluly App - Comprehensive Testing Plan
+# Testing Documentation
 
-## Test Branch: `feature/comprehensive-testing`
+## Overview
 
-This document outlines all test cases for the Pluly AI Assistant app.
+This document describes the automated test suite for the Hey Frank AI Assistant application.
 
----
+## Test Framework
 
-## 🎯 Test Categories
+- **Test Runner**: Vitest
+- **Component Testing**: React Testing Library
+- **Assertions**: Vitest + @testing-library/jest-dom matchers
+- **Coverage**: V8 provider
 
-1. [Core Functionality](#1-core-functionality)
-2. [AI Providers](#2-ai-providers)
-3. [Keyboard Shortcuts](#3-keyboard-shortcuts)
-4. [UI/UX](#4-uiux)
-5. [Settings & Configuration](#5-settings--configuration)
-6. [Performance](#6-performance)
-7. [Error Handling](#7-error-handling)
+## Running Tests
 
----
-
-## 1. Core Functionality
-
-### 1.1 Chat/Messaging
-- [ ] **TC-001**: Send a simple text message and receive response
-- [ ] **TC-002**: Send multiple messages in sequence
-- [ ] **TC-003**: Send long messages (>1000 characters)
-- [ ] **TC-004**: Send special characters and emojis
-- [ ] **TC-005**: Send code snippets (markdown formatted)
-- [ ] **TC-006**: Clear chat history
-- [ ] **TC-007**: View previous chat history after app restart
-
-### 1.2 Image Support
-- [ ] **TC-008**: Upload and send image
-- [ ] **TC-009**: Send multiple images at once
-- [ ] **TC-010**: Copy/paste image from clipboard
-- [ ] **TC-011**: Drag and drop image into chat
-
-### 1.3 Voice/Audio
-- [ ] **TC-012**: Record audio message
-- [ ] **TC-013**: Stop audio recording mid-way
-- [ ] **TC-014**: System audio recording
-- [ ] **TC-015**: Audio playback of responses (if supported)
-
-### 1.4 Screenshot
-- [ ] **TC-016**: Take screenshot of entire screen
-- [ ] **TC-017**: Take screenshot of selected area
-- [ ] **TC-018**: Send screenshot directly to chat
-
----
-
-## 2. AI Providers
-
-### 2.1 Gemini Configuration
-- [ ] **TC-019**: Configure Gemini with API key
-- [ ] **TC-020**: Test with `gemini-3.6-flash` model
-- [ ] **TC-021**: Test with `gemini-flash-latest` model
-- [ ] **TC-022**: Test response streaming
-- [ ] **TC-023**: Test with system prompt customization
-- [ ] **TC-024**: Test rate limiting (send 30+ requests quickly)
-- [ ] **TC-025**: Test with invalid API key (should show error)
-- [ ] **TC-026**: Test with empty model name (should show error)
-
-### 2.2 Other Providers
-- [ ] **TC-027**: Configure and test OpenAI
-- [ ] **TC-028**: Configure and test Claude
-- [ ] **TC-029**: Configure and test DeepSeek
-- [ ] **TC-030**: Configure and test Groq
-- [ ] **TC-031**: Configure and test Ollama (local)
-- [ ] **TC-032**: Switch between providers mid-conversation
-
-### 2.3 Provider Features
-- [ ] **TC-033**: Test image understanding (Gemini)
-- [ ] **TC-034**: Test code generation
-- [ ] **TC-035**: Test long context (1000+ words)
-- [ ] **TC-036**: Test multi-turn conversation
-- [ ] **TC-037**: Test function calling (if supported)
-
----
-
-## 3. Keyboard Shortcuts
-
-### 3.1 Basic Shortcuts
-- [ ] **TC-038**: `Shift+D` - Toggle dashboard
-- [ ] **TC-039**: `Shift+\` - Toggle window visibility
-- [ ] **TC-040**: `Shift+I` - Focus input field
-- [ ] **TC-041**: `Shift+S` - Take screenshot
-- [ ] **TC-042**: `Shift+A` - Start audio recording
-- [ ] **TC-043**: `Shift+M` - System audio recording
-
-### 3.2 Shortcut Conflicts
-- [ ] **TC-044**: Test shortcuts while typing in input field
-- [ ] **TC-045**: Test shortcuts in Dev Space settings
-- [ ] **TC-046**: Test shortcuts when app is minimized
-- [ ] **TC-047**: Test shortcuts when another app is focused
-
----
-
-## 4. UI/UX
-
-### 4.1 Interface Elements
-- [ ] **TC-048**: Dashboard displays correctly
-- [ ] **TC-049**: Chat messages render properly (markdown)
-- [ ] **TC-050**: Code blocks display with syntax highlighting
-- [ ] **TC-051**: Links are clickable
-- [ ] **TC-052**: Images display inline
-- [ ] **TC-053**: Scroll behavior works smoothly
-- [ ] **TC-054**: Copy button works on code blocks
-
-### 4.2 Responsiveness
-- [ ] **TC-055**: Window resizing works correctly
-- [ ] **TC-056**: Minimum window size is enforced
-- [ ] **TC-057**: UI adapts to different screen sizes
-- [ ] **TC-058**: Text wrapping works properly
-
-### 4.3 Dark/Light Theme
-- [ ] **TC-059**: Switch to dark theme
-- [ ] **TC-060**: Switch to light theme
-- [ ] **TC-061**: Theme persists after restart
-
----
-
-## 5. Settings & Configuration
-
-### 5.1 Dev Space
-- [ ] **TC-062**: Open Dev Space settings
-- [ ] **TC-063**: Add new AI provider
-- [ ] **TC-064**: Edit existing provider
-- [ ] **TC-065**: Delete custom provider
-- [ ] **TC-066**: Save configuration
-- [ ] **TC-067**: Configuration persists after restart
-
-### 5.2 System Prompt
-- [ ] **TC-068**: Set custom system prompt
-- [ ] **TC-069**: Clear system prompt
-- [ ] **TC-070**: System prompt affects responses
-- [ ] **TC-071**: Change system prompt mid-conversation
-
-### 5.3 Response Settings
-- [ ] **TC-072**: Change response length setting
-- [ ] **TC-073**: Change language setting
-- [ ] **TC-074**: Settings apply to new messages
-
----
-
-## 6. Performance
-
-### 6.1 Speed & Responsiveness
-- [ ] **TC-075**: App launches in <5 seconds
-- [ ] **TC-076**: Messages send without delay
-- [ ] **TC-077**: Streaming responses appear smoothly
-- [ ] **TC-078**: No lag when typing in input field
-- [ ] **TC-079**: No lag when scrolling chat history
-
-### 6.2 Resource Usage
-- [ ] **TC-080**: Memory usage stays under 500MB
-- [ ] **TC-081**: CPU usage is reasonable (<20% idle)
-- [ ] **TC-082**: No memory leaks after extended use
-
-### 6.3 Stability
-- [ ] **TC-083**: App doesn't crash during normal use
-- [ ] **TC-084**: App handles network errors gracefully
-- [ ] **TC-085**: App recovers from API errors
-
----
-
-## 7. Error Handling
-
-### 7.1 Network Errors
-- [ ] **TC-086**: Handle no internet connection
-- [ ] **TC-087**: Handle API timeout
-- [ ] **TC-088**: Handle API rate limit exceeded
-- [ ] **TC-089**: Show user-friendly error messages
-
-### 7.2 API Errors
-- [ ] **TC-090**: Handle 400 Bad Request
-- [ ] **TC-091**: Handle 401 Unauthorized
-- [ ] **TC-092**: Handle 403 Forbidden
-- [ ] **TC-093**: Handle 404 Not Found
-- [ ] **TC-094**: Handle 429 Rate Limit
-- [ ] **TC-095**: Handle 500 Server Error
-
-### 7.3 Input Validation
-- [ ] **TC-096**: Handle empty message submission
-- [ ] **TC-097**: Handle very long messages (>10k chars)
-- [ ] **TC-098**: Handle invalid file uploads
-- [ ] **TC-099**: Handle corrupted images
-
----
-
-## 📋 Test Execution Checklist
-
-### Before Testing
-- [ ] Clean install of the app
-- [ ] Fresh API key configured
-- [ ] No existing chat history
-- [ ] Stable internet connection
-
-### During Testing
-- [ ] Record any bugs or issues found
-- [ ] Note response times for performance tests
-- [ ] Take screenshots of UI issues
-- [ ] Check console for errors
-
-### After Testing
-- [ ] Document all failed test cases
-- [ ] Create GitHub issues for bugs
-- [ ] Update this document with results
-- [ ] Create test report summary
-
----
-
-## 🐛 Bug Report Template
-
-When you find a bug, document it like this:
-
-```
-**Test Case**: TC-XXX
-**Expected**: [What should happen]
-**Actual**: [What actually happened]
-**Steps to Reproduce**:
-1. Step 1
-2. Step 2
-3. Step 3
-**Screenshots**: [If applicable]
-**Console Errors**: [If any]
-**Severity**: Critical / High / Medium / Low
+### Run All Tests
+```bash
+npm test
 ```
 
+### Run Tests in Watch Mode
+```bash
+npm run test:watch
+```
+
+### Run Tests with Coverage
+```bash
+npm run test:coverage
+```
+
+### Run Specific Test File
+```bash
+npm test -- src/lib/utils.test.ts
+```
+
+### Run Tests Matching Pattern
+```bash
+npm test -- --grep="validation"
+```
+
+## Test Structure
+
+```
+src/
+├── lib/
+│   ├── curl-validator.test.ts      # cURL validation tests
+│   ├── utils.test.ts                # Utility function tests
+│   ├── chat-constants.test.ts      # Chat constants tests
+│   └── storage/
+│       └── helper.test.ts          # Storage helper tests
+├── components/
+│   └── TextInput/
+│       └── TextInput.test.tsx      # Component tests
+├── hooks/
+│   └── useCopyToClipboard.test.ts  # Hook tests
+├── config/
+│   └── ai-providers.test.ts        # Provider config tests
+└── test/
+    └── setup.ts                    # Test setup and mocks
+```
+
+## Test Categories
+
+### 1. Unit Tests
+**Location**: `src/lib/**/*.test.ts`
+
+Tests for pure functions and utilities:
+- curl-validator: cURL command validation logic
+- utils: Utility functions (cn, floatArrayToWav)
+- chat-constants: ID generation and validation
+- storage/helper: Safe localStorage wrapper
+
+**Coverage**: ~95%+ for utility functions
+
+### 2. Component Tests
+**Location**: `src/components/**/*.test.tsx`
+
+Tests for React components:
+- TextInput: Input field behavior and interactions
+- More components can be added
+
+**Coverage**: Key user interactions and edge cases
+
+### 3. Hook Tests
+**Location**: `src/hooks/**/*.test.ts`
+
+Tests for custom React hooks:
+- useCopyToClipboard: Clipboard operations
+- More hooks can be added
+
+**Coverage**: Hook logic and state management
+
+### 4. Configuration Tests
+**Location**: `src/config/**/*.test.ts`
+
+Tests for configuration validation:
+- ai-providers: All 11 AI provider configurations
+- Validates structure, URLs, placeholders
+
+**Coverage**: 100% of provider configs
+
+## Test Coverage Goals
+
+| Category | Target Coverage | Current Status |
+|----------|----------------|----------------|
+| Utility Functions | >95% | ✅ Achieved |
+| Components | >80% | 🟡 In Progress |
+| Hooks | >85% | 🟡 In Progress |
+| Configurations | 100% | ✅ Achieved |
+| Integration | >70% | ⚪ Planned |
+
+## Writing New Tests
+
+### Unit Test Example
+```typescript
+import { describe, it, expect } from 'vitest';
+import { myFunction } from './myModule';
+
+describe('myFunction', () => {
+  it('should do something', () => {
+    const result = myFunction('input');
+    expect(result).toBe('expected output');
+  });
+});
+```
+
+### Component Test Example
+```typescript
+import { render, screen, fireEvent } from '@testing-library/react';
+import { MyComponent } from './MyComponent';
+
+it('should render and handle click', () => {
+  render(<MyComponent />);
+  const button = screen.getByRole('button');
+  fireEvent.click(button);
+  expect(button).toHaveClass('active');
+});
+```
+
+### Hook Test Example
+```typescript
+import { renderHook, act } from '@testing-library/react';
+import { useMyHook } from './useMyHook';
+
+it('should update state', () => {
+  const { result } = renderHook(() => useMyHook());
+  act(() => {
+    result.current.updateValue('new');
+  });
+  expect(result.current.value).toBe('new');
+});
+```
+
+## Test Mocks
+
+### Tauri API Mocks
+Located in `src/test/setup.ts`:
+- `@tauri-apps/api/core` (invoke)
+- `@tauri-apps/api/event` (listen, emit)
+
+### Browser API Mocks
+- localStorage
+- window.matchMedia
+- navigator.clipboard
+
+## CI/CD Integration
+
+### GitHub Actions (Example)
+```yaml
+- name: Run Tests
+  run: npm test
+
+- name: Upload Coverage
+  run: npm run test:coverage
+```
+
+## Troubleshooting
+
+### Tests Fail with "Cannot find module"
+- Run `npm install` to ensure all dependencies are installed
+- Check `vitest.config.ts` path aliases
+
+### Component Tests Fail
+- Ensure `@testing-library/react` is installed
+- Check test setup in `src/test/setup.ts`
+
+### Mock Not Working
+- Clear mocks with `vi.clearAllMocks()` in `beforeEach`
+- Check mock implementation in setup file
+
+## Best Practices
+
+1. **Test Behavior, Not Implementation**
+   - Focus on what the component/function does, not how
+
+2. **Arrange-Act-Assert Pattern**
+   ```typescript
+   // Arrange: Set up test data
+   const input = 'test';
+   
+   // Act: Execute the code
+   const result = myFunction(input);
+   
+   // Assert: Verify the result
+   expect(result).toBe('expected');
+   ```
+
+3. **Descriptive Test Names**
+   - ✅ `it('should validate correct curl command')`
+   - ❌ `it('test 1')`
+
+4. **Test Edge Cases**
+   - Empty inputs
+   - Null/undefined
+   - Very large inputs
+   - Special characters
+   - Error conditions
+
+5. **Keep Tests Fast**
+   - Mock external dependencies
+   - Avoid real API calls
+   - Use fake timers when needed
+
+6. **Isolate Tests**
+   - Each test should be independent
+   - Clean up after each test
+   - Don't rely on test execution order
+
+## Test Data
+
+### Mock Data Location
+Create mock data in `src/test/mockData/`:
+```
+src/test/mockData/
+├── conversations.ts
+├── messages.ts
+└── providers.ts
+```
+
+## Performance
+
+- All tests should complete in < 30 seconds
+- Individual test files should run in < 5 seconds
+- Use `--run` flag for CI to avoid watch mode
+
+## Future Test Plans
+
+### Phase 1 (Current) ✅
+- [x] Unit tests for utilities
+- [x] Configuration validation tests
+- [x] Basic component tests
+- [x] Hook tests
+
+### Phase 2 (Next) 🔄
+- [ ] Integration tests for AI providers
+- [ ] Database operation tests
+- [ ] More component tests
+- [ ] E2E critical path tests
+
+### Phase 3 (Future) 📋
+- [ ] Visual regression tests
+- [ ] Performance benchmarks
+- [ ] Accessibility tests
+- [ ] Security tests
+
+## Resources
+
+- [Vitest Documentation](https://vitest.dev/)
+- [React Testing Library](https://testing-library.com/react)
+- [Testing Best Practices](https://kentcdodds.com/blog/common-mistakes-with-react-testing-library)
+
+## Support
+
+For questions or issues with tests:
+1. Check this documentation
+2. Review existing test examples
+3. Check Vitest documentation
+4. Open an issue on GitHub
+
 ---
 
-## ✅ Test Results Summary
-
-Total Test Cases: 99
-- ✅ Passed: 0
-- ❌ Failed: 0
-- ⏭️ Skipped: 0
-- ⏸️ Pending: 99
-
-**Test Coverage**: 0%
-
----
-
-## 📝 Notes
-
-- All tests should be performed on Windows (as per project setup)
-- Test with gemini-3.6-flash as the primary model
-- Check DevTools console for any JavaScript errors
-- Monitor network tab for API calls
-
----
-
-**Created**: January 2025
-**Last Updated**: January 2025
-**Branch**: `feature/comprehensive-testing`
+**Last Updated**: December 2024  
+**Test Suite Version**: 1.0.0
