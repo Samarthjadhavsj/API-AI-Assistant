@@ -46,8 +46,8 @@ async function convertIcon() {
       const outputPath = path.join(iconsDir, size.name);
       await sharp(sourceImage)
         .resize(size.width, size.height, {
-          fit: 'contain',
-          background: { r: 255, g: 255, b: 255, alpha: 1 }
+          fit: 'cover', // Use 'cover' to fill the space without borders
+          position: 'center'
         })
         .png()
         .toFile(outputPath);
@@ -63,8 +63,8 @@ async function convertIcon() {
     const publicIconPath = path.join(publicDir, 'icon.png');
     await sharp(sourceImage)
       .resize(512, 512, {
-        fit: 'contain',
-        background: { r: 255, g: 255, b: 255, alpha: 1 }
+        fit: 'cover', // Use 'cover' to fill the space without borders
+        position: 'center'
       })
       .png()
       .toFile(publicIconPath);
