@@ -8,7 +8,7 @@ interface AutostartToggleProps {
 export const AutostartToggle = ({ className }: AutostartToggleProps) => {
   const { customizable, toggleAutostart } = useApp();
 
-  const isEnabled = customizable?.autostart?.isEnabled ?? true;
+  const isEnabled = customizable?.autostart?.isEnabled ?? false;
 
   const handleSwitchChange = async (checked: boolean) => {
     await toggleAutostart(checked);

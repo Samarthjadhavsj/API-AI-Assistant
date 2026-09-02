@@ -135,9 +135,13 @@ export const useCompletion = () => {
     async (speechText?: string) => {
       const input = speechText || state.input;
 
-      if (!input.trim()) {
+      // Allow submission if there's text OR attached files (images/screenshots)
+      if (!input.trim() && state.attachedFiles.length === 0) {
         return;
       }
+
+      // If no text but has images, use a default prompt
+      const userMessage = input.trim() || "What's in this image?";
 
       if (speechText) {
         setState((prev) => ({
@@ -212,7 +216,7 @@ export const useCompletion = () => {
             selectedProvider: selectedAIProvider,
             systemPrompt: systemPrompt || undefined,
             history: messageHistory,
-            userMessage: input,
+            userMessage: userMessage,
             imagesBase64,
             signal,
           })) {
@@ -259,7 +263,7 @@ export const useCompletion = () => {
         // Save the conversation after successful completion
         if (fullResponse) {
           await saveCurrentConversation(
-            input,
+            userMessage,
             fullResponse,
             state.attachedFiles
           );
@@ -332,12 +336,17 @@ export const useCompletion = () => {
   // are now imported from lib/database/chat-history.action.ts
 
   const loadConversation = useCallback((conversation: ChatConversation) => {
+    // Find the last assistant message to display as response
+    const lastAssistantMessage = conversation.messages
+      .filter(msg => msg.role === 'assistant')
+      .pop();
+    
     setState((prev) => ({
       ...prev,
       currentConversationId: conversation.id,
       conversationHistory: conversation.messages,
       input: "",
-      response: "",
+      response: lastAssistantMessage?.content || "",
       error: null,
       isLoading: false,
     }));
@@ -737,7 +746,8 @@ export const useCompletion = () => {
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (!state.isLoading && state.input.trim()) {
+      // Allow submission if there's text OR if there are attached files (screenshots/images)
+      if (!state.isLoading && (state.input.trim() || state.attachedFiles.length > 0)) {
         submit();
       }
     }

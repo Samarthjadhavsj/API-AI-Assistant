@@ -313,7 +313,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
         // Only apply autostart on the very first launch
         if (!autostartInitialized) {
-          const autostartEnabled = customizable?.autostart?.isEnabled ?? true;
+          const autostartEnabled = customizable?.autostart?.isEnabled ?? false;
 
           if (autostartEnabled) {
             await enable();
