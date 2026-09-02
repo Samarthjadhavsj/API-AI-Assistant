@@ -178,16 +178,13 @@ fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
                 eprintln!("Failed to show window: {}", e);
             }
             
-            // Delay set_focus to avoid race with show()
-            let window_clone = window.clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_millis(30));
-                let _ = window_clone.set_focus();
-            });
-            
-            if let Err(e) = window.emit("focus-text-input", json!({})) {
-                eprintln!("Failed to emit focus-text-input event: {}", e);
+            // Bring window to front by re-asserting always-on-top
+            if let Err(e) = window.set_always_on_top(true) {
+                eprintln!("Failed to set always on top: {}", e);
             }
+            
+            // DO NOT call set_focus() - let user keep focus on their current app
+            // DO NOT emit focus-text-input - only focus when user clicks on Hey Frank
         }
         
         // Emit event to close popovers
@@ -214,22 +211,25 @@ fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
             }
         }
         Ok(false) => {
-            // Window is hidden, show it and handle app icon based on user settings
+            // Window is hidden, show it and bring to front
             if let Err(e) = window.show() {
                 eprintln!("Failed to show window: {}", e);
             }
 
-            if let Err(e) = window.set_focus() {
-                eprintln!("Failed to focus window: {}", e);
+            // Bring window to front by re-asserting always-on-top
+            if let Err(e) = window.set_always_on_top(true) {
+                eprintln!("Failed to set always on top: {}", e);
             }
+
+            // DO NOT call set_focus() - let user keep focus on their current app
 
             #[cfg(target_os = "macos")]
             {
                 let panel = app.get_webview_panel("main").unwrap();
                 panel.show();
             }
-            // Emit event to focus text input
-            window.emit("focus-text-input", json!({})).unwrap();
+            
+            // DO NOT emit focus-text-input - only focus when user clicks
         }
         Err(e) => {
             eprintln!("Failed to check window visibility: {}", e);

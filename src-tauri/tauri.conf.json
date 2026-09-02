@@ -25,7 +25,7 @@
         "visible": false,
         "center": false,
         "contentProtected": true,
-        "focus": true,
+        "focus": false,
         "acceptFirstMouse": true,
         "shadow": false
       }
