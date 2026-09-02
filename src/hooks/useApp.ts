@@ -8,6 +8,12 @@ import { invoke } from "@tauri-apps/api/core";
 export const useApp = () => {
   const systemAudio = useSystemAudio();
   const [isHidden, setIsHidden] = useState(false);
+  const [updatesEnabled, setUpdatesEnabled] = useState(() => {
+    // Initialize from localStorage
+    const saved = safeLocalStorage.getItem("updates_enabled");
+    return saved !== "false"; // Default to true
+  });
+  
   // Initialize title management
   useTitles();
 
@@ -143,11 +149,35 @@ export const useApp = () => {
     };
   }, []);
 
+  // Listen for toggle-updates event from Rust backend
+  useEffect(() => {
+    const unlistenPromise = listen("toggle-updates", () => {
+      setUpdatesEnabled((prev) => {
+        const newValue = !prev;
+        safeLocalStorage.setItem("updates_enabled", String(newValue));
+        console.log(`Updates ${newValue ? "enabled" : "disabled"}`);
+        
+        // Show a notification to the user
+        const message = newValue ? "Updates enabled" : "Updates disabled";
+        // You can emit a toast notification here if you have a toast system
+        console.log(`[TOGGLE] ${message}`);
+        
+        return newValue;
+      });
+    });
+
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, []);
+
   return {
     isHidden,
     setIsHidden,
     handleSelectConversation,
     handleNewConversation,
     systemAudio,
+    updatesEnabled,
+    setUpdatesEnabled,
   };
 };

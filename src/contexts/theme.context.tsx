@@ -100,6 +100,15 @@ export function ThemeProvider({
     const toggleBlur =
       transparency > 0 ? `blur(${Math.round(6 + transparency / 10)}px)` : "none";
 
+    // Calculate popover-glass opacity based on transparency slider
+    // When transparency is 0 (fully opaque), use higher opacity
+    // When transparency is 100 (fully transparent), use minimal opacity
+    const popoverGlassOpacity = Math.max(0.13, opacity * 0.95);
+    
+    // Determine if dark mode is active
+    const isDark = root.classList.contains('dark');
+    const popoverGlassColor = isDark ? '20, 20, 20' : '255, 255, 255';
+
     // `--opacity` is retained for existing consumers. The toggle-specific
     // variables prevent this preference from affecting the full dashboard.
     root.style.setProperty("--opacity", opacity.toString());
@@ -108,6 +117,8 @@ export function ThemeProvider({
       toggleSurfaceOpacity.toString()
     );
     root.style.setProperty("--toggle-backdrop-blur", toggleBlur);
+    // Apply the same transparency to response window background
+    root.style.setProperty("--popover-glass", `rgba(${popoverGlassColor}, ${popoverGlassOpacity})`);
   }, [transparency]);
 
   const onSetTransparency = (transparency: number) => {
