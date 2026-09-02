@@ -41,7 +41,10 @@
     "test:coverage": "vitest run --coverage",
     "test:ui": "vitest --ui",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build:production": "npm run build && npm run tauri build --release",
+    "build:quick": "npm run tauri build",
+    "build:debug": "npm run tauri build --debug"
   },
   "dependencies": {
     "@bany/curl-to-json": "^1.2.8",
