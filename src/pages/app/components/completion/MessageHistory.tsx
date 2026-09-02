@@ -120,8 +120,6 @@ export const MessageHistory = ({
     return allConversations.filter(conv => conv.id !== currentConversationId);
   }, [allConversations, currentConversationId]);
 
-  const isInActiveConversation = currentConversationId !== null && conversationHistory.length > 0;
-
   return (
     <Popover open={messageHistoryOpen} onOpenChange={setMessageHistoryOpen}>
       <PopoverTrigger asChild>

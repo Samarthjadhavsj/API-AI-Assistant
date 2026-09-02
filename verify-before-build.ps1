@@ -90,7 +90,7 @@ Write-Host ""
 if ($allGood) {
     Write-Host "✅ ALL CHECKS PASSED!" -ForegroundColor Green
     Write-Host ""
-    Write-Host "You're ready to build! Run:" -ForegroundColor Cyan
+    Write-Host "Ready to build! Run:" -ForegroundColor Cyan
     Write-Host "  .\build-ultimate.ps1" -ForegroundColor White
     Write-Host ""
     exit 0

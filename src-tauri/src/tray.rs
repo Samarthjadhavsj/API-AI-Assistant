@@ -76,9 +76,9 @@ fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
                     println!("[TRAY] Hiding window via tray toggle");
                     let _ = window.hide();
                 } else {
-                    println!("[TRAY] Showing window via tray toggle");
+                    println!("[TRAY] Showing window via tray toggle - without stealing focus");
                     let _ = window.show();
-                    let _ = window.set_focus();
+                    // Do NOT call set_focus() - let user keep focus on their current app
                 }
             }
             Err(e) => {
