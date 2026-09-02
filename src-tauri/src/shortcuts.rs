@@ -178,6 +178,11 @@ fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
                 eprintln!("Failed to show window: {}", e);
             }
             
+            // Bring window to front by re-asserting always-on-top
+            if let Err(e) = window.set_always_on_top(true) {
+                eprintln!("Failed to set always on top: {}", e);
+            }
+            
             // DO NOT call set_focus() - let user keep focus on their current app
             // DO NOT emit focus-text-input - only focus when user clicks on Hey Frank
         }
@@ -206,13 +211,17 @@ fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
             }
         }
         Ok(false) => {
-            // Window is hidden, show it and handle app icon based on user settings
+            // Window is hidden, show it and bring to front
             if let Err(e) = window.show() {
                 eprintln!("Failed to show window: {}", e);
             }
 
-            // DO NOT call set_focus() - let user keep focus on their current app
+            // Bring window to front by re-asserting always-on-top
+            if let Err(e) = window.set_always_on_top(true) {
+                eprintln!("Failed to set always on top: {}", e);
+            }
 
+            // DO NOT call set_focus() - let user keep focus on their current app
 
             #[cfg(target_os = "macos")]
             {

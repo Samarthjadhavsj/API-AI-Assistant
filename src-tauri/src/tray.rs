@@ -76,8 +76,10 @@ fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
                     println!("[TRAY] Hiding window via tray toggle");
                     let _ = window.hide();
                 } else {
-                    println!("[TRAY] Showing window via tray toggle - without stealing focus");
+                    println!("[TRAY] Showing window via tray toggle - bringing to front");
                     let _ = window.show();
+                    // Bring window to front by re-asserting always-on-top
+                    let _ = window.set_always_on_top(true);
                     // Do NOT call set_focus() - let user keep focus on their current app
                 }
             }
