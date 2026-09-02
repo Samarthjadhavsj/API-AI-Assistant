@@ -180,9 +180,6 @@ fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
             
             // DO NOT call set_focus() - let user keep focus on their current app
             // DO NOT emit focus-text-input - only focus when user clicks on Hey Frank
-            if let Err(e) = window.emit("focus-text-input", json!({})) {
-                eprintln!("Failed to emit focus-text-input event: {}", e);
-            }
         }
         
         // Emit event to close popovers
