@@ -34,4 +34,27 @@ export default defineConfig(async () => ({
       ignored: ["**/src-tauri/**"],
     },
   },
+  // Production build optimizations
+  build: {
+    // Optimize for production
+    minify: "esbuild",
+    target: "esnext",
+    // Reduce chunk size warnings
+    chunkSizeWarningLimit: 1000,
+    // Optimize dependencies
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ["react", "react-dom", "react-router-dom"],
+          ui: ["@radix-ui/react-dialog", "@radix-ui/react-dropdown-menu", "@radix-ui/react-select"],
+        },
+      },
+    },
+    // Better sourcemaps for production debugging
+    sourcemap: false,
+  },
+  // Optimize dependencies
+  optimizeDeps: {
+    include: ["react", "react-dom", "react-router-dom"],
+  },
 }));
