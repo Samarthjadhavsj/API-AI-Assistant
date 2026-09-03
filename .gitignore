@@ -22,3 +22,12 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Build artifacts
+*.exe
+*.msi
+*.dmg
+*.AppImage
+*.deb
+*.rpm
+src-tauri/target/
