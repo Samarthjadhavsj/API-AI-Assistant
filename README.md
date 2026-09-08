@@ -363,7 +363,7 @@ npm run test:coverage
 npm run test:ui
 ```
 
-See [TEST_CASES.md](./TEST_CASES.md) for detailed test documentation.
+See [TEST_CASES.md](./docs/TEST_CASES.md) for detailed test documentation.
 
 ---
 
@@ -373,8 +373,8 @@ We maintain comprehensive test coverage:
 
 - **Unit Tests**: 225+ tests
 - **Integration Tests**: Full workflow coverage
-- **Manual Test Suite**: [MANUAL_TEST_EXECUTION_GUIDE.md](./MANUAL_TEST_EXECUTION_GUIDE.md)
-- **Smoke Tests**: [SMOKE_TEST_CHECKLIST.md](./SMOKE_TEST_CHECKLIST.md)
+- **Manual Test Suite**: [MANUAL_TEST_EXECUTION_GUIDE.md](./docs/MANUAL_TEST_EXECUTION_GUIDE.md)
+- **Smoke Tests**: [SMOKE_TEST_CHECKLIST.md](./docs/SMOKE_TEST_CHECKLIST.md)
 
 ### Test Reports
 - [Automated Tests Report](./AUTOMATED_TESTS_FINAL_REPORT.md)
