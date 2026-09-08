@@ -1,14 +1,131 @@
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
-use tokio::time::{sleep, Duration};
 
 #[cfg(target_os = "macos")]
 use tauri_nspanel::ManagerExt;
+
+#[cfg(target_os = "windows")]
+use std::sync::atomic::{AtomicU32, AtomicU64};
+#[cfg(target_os = "windows")]
+use std::sync::OnceLock;
+#[cfg(target_os = "windows")]
+use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
+#[cfg(target_os = "windows")]
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_BACK, VK_SHIFT};
+#[cfg(target_os = "windows")]
+use windows::Win32::UI::WindowsAndMessaging::{
+    CallNextHookEx, DispatchMessageW, GetMessageW, PostThreadMessageW, SetWindowsHookExW,
+    TranslateMessage, UnhookWindowsHookEx, HHOOK, KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL,
+    WM_KEYDOWN, WM_QUIT, WM_SYSKEYDOWN,
+};
+
+#[cfg(target_os = "windows")]
+static HOOK_THREAD_ID: AtomicU32 = AtomicU32::new(0);
+#[cfg(target_os = "windows")]
+static LAST_TOGGLE_MS: AtomicU64 = AtomicU64::new(0);
+#[cfg(target_os = "windows")]
+static GLOBAL_APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
+
+#[cfg(target_os = "windows")]
+extern "system" {
+    fn GetCurrentThreadId() -> u32;
+}
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn low_level_keyboard_proc(
+    code: i32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    if code >= 0 && (wparam.0 == WM_KEYDOWN as usize || wparam.0 == WM_SYSKEYDOWN as usize) {
+        let kbd_struct = *(lparam.0 as *const KBDLLHOOKSTRUCT);
+        if kbd_struct.vkCode == VK_BACK.0 as u32 {
+            let shift_down = (GetAsyncKeyState(VK_SHIFT.0 as i32) as u16 & 0x8000) != 0;
+            if shift_down {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+                let last = LAST_TOGGLE_MS.load(Ordering::Relaxed);
+                if now.saturating_sub(last) >= 200 {
+                    LAST_TOGGLE_MS.store(now, Ordering::Relaxed);
+                    eprintln!("[SHORTCUT] Shift+Backspace detected, toggling window");
+                    if let Some(app) = GLOBAL_APP_HANDLE.get() {
+                        let app_clone = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            handle_toggle_window(&app_clone);
+                        });
+                    }
+                }
+            }
+        }
+    }
+    CallNextHookEx(HHOOK(std::ptr::null_mut()), code, wparam, lparam)
+}
+
+#[cfg(target_os = "windows")]
+pub fn setup_windows_hook(app: &AppHandle) {
+    eprintln!("[HOOK] Installing Windows keyboard hook for Shift+Backspace");
+    let _ = GLOBAL_APP_HANDLE.set(app.clone());
+    if HOOK_THREAD_ID.load(Ordering::SeqCst) != 0 {
+        eprintln!("[HOOK] Hook thread already running");
+        return;
+    }
+
+    std::thread::spawn(move || {
+        let thread_id = unsafe { GetCurrentThreadId() };
+        HOOK_THREAD_ID.store(thread_id, Ordering::SeqCst);
+
+        // For WH_KEYBOARD_LL, pass NULL module handle (required)
+        let hinstance = HINSTANCE(std::ptr::null_mut());
+
+        let hook = unsafe {
+            SetWindowsHookExW(
+                WH_KEYBOARD_LL,
+                Some(low_level_keyboard_proc),
+                hinstance,
+                0,
+            )
+        };
+        match hook {
+            Ok(h) => {
+                eprintln!("[HOOK] WH_KEYBOARD_LL installed successfully");
+                let mut msg = MSG::default();
+
+                loop {
+                    let result = unsafe { GetMessageW(&mut msg, HWND(std::ptr::null_mut()), 0, 0) };
+                    if !result.as_bool() {
+                        break;
+                    }
+                    unsafe {
+                        let _ = TranslateMessage(&msg);
+                        DispatchMessageW(&msg);
+                    }
+                }
+                let _ = unsafe { UnhookWindowsHookEx(h) };
+            }
+            Err(e) => {
+                use windows::Win32::Foundation::GetLastError;
+                let err_code = unsafe { GetLastError().0 };
+                eprintln!("[HOOK] Failed to install WH_KEYBOARD_LL hook: {} (Error code: {})", e, err_code);
+            }
+        }
+    });
+}
+
+#[cfg(target_os = "windows")]
+pub fn cleanup_windows_hook() {
+    let thread_id = HOOK_THREAD_ID.swap(0, Ordering::SeqCst);
+    if thread_id != 0 {
+        unsafe {
+            let _ = PostThreadMessageW(thread_id, WM_QUIT, WPARAM(0), LPARAM(0));
+        }
+    }
+}
 
 // State for overlay window - tracks if user intentionally hid it
 pub struct OverlayState {
@@ -38,20 +155,6 @@ impl Default for RegisteredShortcuts {
     fn default() -> Self {
         RegisteredShortcuts {
             shortcuts: Mutex::new(HashMap::new()),
-        }
-    }
-}
-
-pub(crate) type MoveWindowTask = Arc<AtomicBool>;
-
-pub(crate) struct MoveWindowState {
-    tasks: Mutex<HashMap<String, MoveWindowTask>>,
-}
-
-impl Default for MoveWindowState {
-    fn default() -> Self {
-        MoveWindowState {
-            tasks: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -97,61 +200,11 @@ pub fn handle_shortcut_action<R: Runtime>(app: &AppHandle<R>, action_id: &str) {
     }
 }
 
-pub fn start_move_window<R: Runtime>(app: &AppHandle<R>, direction: &str) {
-    let state = app.state::<MoveWindowState>();
-    let mut tasks = match state.tasks.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
-    };
-
-    if tasks.contains_key(direction) {
-        return;
-    }
-
-    let stop_flag: MoveWindowTask = Arc::new(AtomicBool::new(false));
-    let flag_clone = stop_flag.clone();
-    let dir = direction.to_string();
-    let app_handle = app.clone();
-
-    tauri::async_runtime::spawn(async move {
-        let interval = Duration::from_millis(16);
-        while !flag_clone.load(Ordering::Relaxed) {
-            handle_move_window(&app_handle, &dir);
-            sleep(interval).await;
-        }
-    });
-
-    tasks.insert(direction.to_string(), stop_flag);
-}
-
-pub fn stop_move_window<R: Runtime>(app: &AppHandle<R>, direction: &str) {
-    let state = app.state::<MoveWindowState>();
-    let mut tasks = match state.tasks.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
-    };
-
-    if let Some(flag) = tasks.remove(direction) {
-        flag.store(true, Ordering::Relaxed);
-    }
-}
-
-pub fn stop_all_move_windows<R: Runtime>(app: &AppHandle<R>) {
-    let state = app.state::<MoveWindowState>();
-    let mut tasks = match state.tasks.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
-    };
-
-    for (_direction, flag) in tasks.drain() {
-        flag.store(true, Ordering::Relaxed);
-    }
-}
-
 /// Handle app toggle (hide/show) with input focus and app icon management
-fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
+pub(crate) fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
     // Get the main window
     let Some(window) = app.get_webview_window("main") else {
+        eprintln!("[TOGGLE] Error: Could not get main window");
         return;
     };
 
@@ -160,19 +213,16 @@ fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
         let state = app.state::<OverlayState>();
         let is_visible = window.is_visible().unwrap_or(false);
 
-        println!("[TOGGLE DEBUG] is_visible from Tauri: {}", is_visible);
-        println!("[TOGGLE DEBUG] user_hidden state: {}", state.user_hidden.load(Ordering::SeqCst));
-
         if is_visible {
             // Window is visible, hide it
-            println!("[TOGGLE] Hiding window (user requested)");
+            eprintln!("[TOGGLE] Hiding window");
             state.user_hidden.store(true, Ordering::SeqCst);
             if let Err(e) = window.hide() {
                 eprintln!("Failed to hide window: {}", e);
             }
         } else {
             // Window is hidden, show it
-            println!("[TOGGLE] Showing window (user requested)");
+            eprintln!("[TOGGLE] Showing window");
             state.user_hidden.store(false, Ordering::SeqCst);
             if let Err(e) = window.show() {
                 eprintln!("Failed to show window: {}", e);
@@ -263,33 +313,15 @@ pub fn update_shortcuts<R: Runtime>(
     eprintln!("Updating shortcuts with {} bindings", config.bindings.len());
 
     let mut shortcuts_to_register = Vec::new();
+    let mut successfully_registered = HashMap::new();
 
     for (action_id, binding) in &config.bindings {
         if binding.enabled && !binding.key.is_empty() {
-            if action_id == "move_window" {
-                let modifiers = binding.key.trim();
-                if modifiers.is_empty() {
-                    continue;
-                }
-
-                let arrow_keys = vec!["up", "down", "left", "right"];
-                for arrow in arrow_keys {
-                    let full_key = format!("{}+{}", modifiers, arrow);
-                    match full_key.parse::<Shortcut>() {
-                        Ok(shortcut) => {
-                            let direction_action_id = format!("move_window_{}", arrow);
-                            shortcuts_to_register.push((direction_action_id, full_key, shortcut));
-                        }
-                        Err(e) => {
-                            eprintln!("Invalid shortcut '{}' for move_window: {}", full_key, e);
-                            return Err(format!(
-                                "Invalid shortcut '{}' for move_window: {}",
-                                full_key, e
-                            ));
-                        }
-                    }
-                }
-
+            #[cfg(target_os = "windows")]
+            if action_id == "toggle_window" && binding.key.trim().eq_ignore_ascii_case("shift+backspace") {
+                // Handled via WH_KEYBOARD_LL on Windows to avoid RegisterHotKey Backspace suppression
+                eprintln!("Registered shortcut: {} -> {} (WH_KEYBOARD_LL hook)", action_id, binding.key);
+                successfully_registered.insert(action_id.clone(), binding.key.clone());
                 continue;
             }
 
@@ -311,15 +343,10 @@ pub fn update_shortcuts<R: Runtime>(
         }
     }
 
-    // First, stop any ongoing window movement
-    stop_all_move_windows(&app);
-
-    // Then, unregister all existing shortcuts
+    // Unregister all existing shortcuts
     unregister_all_shortcuts(&app)?;
 
     // Now register all new shortcuts
-    let mut successfully_registered = HashMap::new();
-
     let mut registration_failures: Vec<(String, String, String)> = Vec::new();
 
     for (action_id, shortcut_str, shortcut) in shortcuts_to_register {
@@ -483,42 +510,10 @@ pub fn set_always_on_top<R: Runtime>(app: AppHandle<R>, enabled: bool) -> Result
     Ok(())
 }
 
-fn handle_move_window<R: Runtime>(app: &AppHandle<R>, direction: &str) {
-    if let Some(window) = app.get_webview_window("main") {
-        match window.outer_position() {
-            Ok(current_pos) => {
-                let step = 12;
-                let (new_x, new_y) = match direction {
-                    "up" => (current_pos.x, current_pos.y - step),
-                    "down" => (current_pos.x, current_pos.y + step),
-                    "left" => (current_pos.x - step, current_pos.y),
-                    "right" => (current_pos.x + step, current_pos.y),
-                    _ => {
-                        eprintln!("Invalid direction: {}", direction);
-                        return;
-                    }
-                };
-
-                if let Err(e) =
-                    window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-                        x: new_x,
-                        y: new_y,
-                    }))
-                {
-                    eprintln!("Failed to set window position: {}", e);
-                }
-            }
-            Err(e) => {
-                eprintln!("Failed to get window position: {}", e);
-            }
-        }
-    } else {
-        eprintln!("Main window not found");
-    }
-}
-
 /// Tauri command to exit the application
 #[tauri::command]
 pub fn exit_app(app_handle: tauri::AppHandle) {
+    #[cfg(target_os = "windows")]
+    cleanup_windows_hook();
     app_handle.exit(0);
 }
