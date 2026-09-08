@@ -69,7 +69,7 @@ const ShortcutSettings = () => (
 export const TOGGLE_SETTINGS_CONTENT = {
   appearance: AppearanceSettings,
   providers: ProviderSettings,
-  "pluely-access": ProviderSettings,
+  "hey-frank-access": ProviderSettings,
   speech: SpeechToTextSettings,
   responses: ResponseSettings,
   screenshot: ScreenshotSettings,
