@@ -11,14 +11,4 @@ export const DEFAULT_SHORTCUT_ACTIONS: ShortcutAction[] = [
       linux: "shift+backspace",
     },
   },
-  {
-    id: "toggle_updates",
-    name: "Toggle Updates",
-    description: "Toggle update notifications",
-    defaultKey: {
-      macos: "shift+backslash",
-      windows: "shift+backslash",
-      linux: "shift+backslash",
-    },
-  },
 ];

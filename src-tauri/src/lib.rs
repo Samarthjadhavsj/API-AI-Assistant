@@ -85,7 +85,6 @@ pub fn run() {
             is_hidden: Mutex::new(false),
         })
         .manage(shortcuts::RegisteredShortcuts::default())
-        .manage(shortcuts::MoveWindowState::default())
         .manage(shortcuts::OverlayState::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
@@ -246,24 +245,9 @@ pub fn run() {
                             };
 
                             if let Some(action_id) = action_id {
-                                match event.state() {
-                                    ShortcutState::Pressed => {
-                                        if let Some(direction) =
-                                            action_id.strip_prefix("move_window_")
-                                        {
-                                            shortcuts::start_move_window(app, direction);
-                                        } else {
-                                            eprintln!("Shortcut triggered: {}", action_id);
-                                            shortcuts::handle_shortcut_action(app, &action_id);
-                                        }
-                                    }
-                                    ShortcutState::Released => {
-                                        if let Some(direction) =
-                                            action_id.strip_prefix("move_window_")
-                                        {
-                                            shortcuts::stop_move_window(app, direction);
-                                        }
-                                    }
+                                if event.state() == ShortcutState::Pressed {
+                                    eprintln!("Shortcut triggered: {}", action_id);
+                                    shortcuts::handle_shortcut_action(app, &action_id);
                                 }
                             }
                         })
@@ -273,6 +257,8 @@ pub fn run() {
             if let Err(e) = shortcuts::setup_global_shortcuts(app.handle()) {
                 eprintln!("Failed to setup global shortcuts: {}", e);
             }
+            #[cfg(target_os = "windows")]
+            shortcuts::setup_windows_hook(app.handle());
             Ok(())
         });
 
