@@ -9,26 +9,29 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 use tauri_nspanel::ManagerExt;
 
 #[cfg(target_os = "windows")]
-use std::sync::atomic::{AtomicU32, AtomicU64};
+use std::sync::atomic::AtomicU32;
 #[cfg(target_os = "windows")]
 use std::sync::OnceLock;
 #[cfg(target_os = "windows")]
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 #[cfg(target_os = "windows")]
-use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_BACK, VK_SHIFT};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    RegisterHotKey, UnregisterHotKey, MOD_NOREPEAT, MOD_SHIFT, VK_BACK,
+};
 #[cfg(target_os = "windows")]
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, DispatchMessageW, GetMessageW, PostThreadMessageW, SetWindowsHookExW,
-    TranslateMessage, UnhookWindowsHookEx, HHOOK, KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL, WM_KEYDOWN,
-    WM_QUIT, WM_SYSKEYDOWN,
+    DispatchMessageW, GetMessageW, PeekMessageW, PostThreadMessageW, TranslateMessage, MSG,
+    PM_NOREMOVE, WM_HOTKEY, WM_QUIT,
 };
 
 #[cfg(target_os = "windows")]
 static HOOK_THREAD_ID: AtomicU32 = AtomicU32::new(0);
 #[cfg(target_os = "windows")]
-static LAST_TOGGLE_MS: AtomicU64 = AtomicU64::new(0);
-#[cfg(target_os = "windows")]
 static GLOBAL_APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
+
+/// Fixed hotkey ID used with RegisterHotKey.
+#[cfg(target_os = "windows")]
+const HOTKEY_ID_SHIFT_BACKSPACE: i32 = 1;
 
 #[cfg(target_os = "windows")]
 extern "system" {
@@ -36,43 +39,10 @@ extern "system" {
 }
 
 #[cfg(target_os = "windows")]
-unsafe extern "system" fn low_level_keyboard_proc(
-    code: i32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-) -> LRESULT {
-    if code >= 0 && (wparam.0 == WM_KEYDOWN as usize || wparam.0 == WM_SYSKEYDOWN as usize) {
-        let kbd_struct = *(lparam.0 as *const KBDLLHOOKSTRUCT);
-        if kbd_struct.vkCode == VK_BACK.0 as u32 {
-            let shift_down = (GetAsyncKeyState(VK_SHIFT.0 as i32) as u16 & 0x8000) != 0;
-            if shift_down {
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as u64;
-                let last = LAST_TOGGLE_MS.load(Ordering::Relaxed);
-                if now.saturating_sub(last) >= 200 {
-                    LAST_TOGGLE_MS.store(now, Ordering::Relaxed);
-                    eprintln!("[SHORTCUT] Shift+Backspace detected, toggling window");
-                    if let Some(app) = GLOBAL_APP_HANDLE.get() {
-                        let app_clone = app.clone();
-                        tauri::async_runtime::spawn(async move {
-                            handle_toggle_window(&app_clone);
-                        });
-                    }
-                }
-            }
-        }
-    }
-    CallNextHookEx(HHOOK(std::ptr::null_mut()), code, wparam, lparam)
-}
-
-#[cfg(target_os = "windows")]
 pub fn setup_windows_hook(app: &AppHandle) {
-    eprintln!("[HOOK] Installing Windows keyboard hook for Shift+Backspace");
+    eprintln!("[HOTKEY] Registering Shift+Backspace hotkey");
     let _ = GLOBAL_APP_HANDLE.set(app.clone());
     if HOOK_THREAD_ID.load(Ordering::SeqCst) != 0 {
-        eprintln!("[HOOK] Hook thread already running");
         return;
     }
 
@@ -80,38 +50,57 @@ pub fn setup_windows_hook(app: &AppHandle) {
         let thread_id = unsafe { GetCurrentThreadId() };
         HOOK_THREAD_ID.store(thread_id, Ordering::SeqCst);
 
-        // For WH_KEYBOARD_LL, pass NULL module handle (required)
-        let hinstance = HINSTANCE(std::ptr::null_mut());
+        // Create the thread message queue before calling RegisterHotKey.
+        unsafe {
+            let mut dummy_msg = MSG::default();
+            let _ = PeekMessageW(
+                &mut dummy_msg,
+                HWND(std::ptr::null_mut()),
+                0,
+                0,
+                PM_NOREMOVE,
+            );
+        }
 
-        let hook = unsafe {
-            SetWindowsHookExW(WH_KEYBOARD_LL, Some(low_level_keyboard_proc), hinstance, 0)
+        // Register Shift+Backspace as a system-wide hotkey on this thread.
+        let registered = unsafe {
+            RegisterHotKey(
+                HWND(std::ptr::null_mut()),
+                HOTKEY_ID_SHIFT_BACKSPACE,
+                MOD_SHIFT | MOD_NOREPEAT,
+                VK_BACK.0 as u32,
+            )
         };
-        match hook {
-            Ok(h) => {
-                eprintln!("[HOOK] WH_KEYBOARD_LL installed successfully");
-                let mut msg = MSG::default();
+        if registered.is_err() {
+            return;
+        }
 
-                loop {
-                    let result = unsafe { GetMessageW(&mut msg, HWND(std::ptr::null_mut()), 0, 0) };
-                    if !result.as_bool() {
-                        break;
-                    }
-                    unsafe {
-                        let _ = TranslateMessage(&msg);
-                        DispatchMessageW(&msg);
-                    }
-                }
-                let _ = unsafe { UnhookWindowsHookEx(h) };
+        let mut msg = MSG::default();
+        loop {
+            // GetMessageW returns 0 on WM_QUIT, -1 on error, positive otherwise.
+            let result = unsafe { GetMessageW(&mut msg, HWND(std::ptr::null_mut()), 0, 0) };
+            if result.0 <= 0 {
+                // 0 = WM_QUIT, -1 = error — either way, exit the loop.
+                break;
             }
-            Err(e) => {
-                use windows::Win32::Foundation::GetLastError;
-                let err_code = unsafe { GetLastError().0 };
-                eprintln!(
-                    "[HOOK] Failed to install WH_KEYBOARD_LL hook: {} (Error code: {})",
-                    e, err_code
-                );
+            if msg.message == WM_HOTKEY && msg.wParam.0 as i32 == HOTKEY_ID_SHIFT_BACKSPACE {
+                eprintln!("[HOTKEY] Shift+Backspace detected, toggling window");
+                if let Some(app) = GLOBAL_APP_HANDLE.get() {
+                    let app_clone = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        handle_toggle_window(&app_clone);
+                    });
+                }
+            } else {
+                unsafe {
+                    let _ = TranslateMessage(&msg);
+                    DispatchMessageW(&msg);
+                }
             }
         }
+
+        // Unregister the hotkey before the thread exits.
+        let _ = unsafe { UnregisterHotKey(HWND(std::ptr::null_mut()), HOTKEY_ID_SHIFT_BACKSPACE) };
     });
 }
 
@@ -413,6 +402,14 @@ fn unregister_all_shortcuts<R: Runtime>(app: &AppHandle<R>) -> Result<(), String
     };
 
     for (action_id, shortcut_str) in registered.iter() {
+        // Shift+Backspace is handled via RegisterHotKey on Windows, not through
+        // tauri_plugin_global_shortcut, so skip it here to avoid a failed unregister.
+        #[cfg(target_os = "windows")]
+        if action_id == "toggle_window"
+            && shortcut_str.trim().eq_ignore_ascii_case("shift+backspace")
+        {
+            continue;
+        }
         if let Ok(shortcut) = shortcut_str.parse::<Shortcut>() {
             match app.global_shortcut().unregister(shortcut) {
                 Ok(_) => {
