@@ -19,8 +19,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_BACK, VK_
 #[cfg(target_os = "windows")]
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, DispatchMessageW, GetMessageW, PostThreadMessageW, SetWindowsHookExW,
-    TranslateMessage, UnhookWindowsHookEx, HHOOK, KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL,
-    WM_KEYDOWN, WM_QUIT, WM_SYSKEYDOWN,
+    TranslateMessage, UnhookWindowsHookEx, HHOOK, KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL, WM_KEYDOWN,
+    WM_QUIT, WM_SYSKEYDOWN,
 };
 
 #[cfg(target_os = "windows")]
@@ -84,12 +84,7 @@ pub fn setup_windows_hook(app: &AppHandle) {
         let hinstance = HINSTANCE(std::ptr::null_mut());
 
         let hook = unsafe {
-            SetWindowsHookExW(
-                WH_KEYBOARD_LL,
-                Some(low_level_keyboard_proc),
-                hinstance,
-                0,
-            )
+            SetWindowsHookExW(WH_KEYBOARD_LL, Some(low_level_keyboard_proc), hinstance, 0)
         };
         match hook {
             Ok(h) => {
@@ -111,7 +106,10 @@ pub fn setup_windows_hook(app: &AppHandle) {
             Err(e) => {
                 use windows::Win32::Foundation::GetLastError;
                 let err_code = unsafe { GetLastError().0 };
-                eprintln!("[HOOK] Failed to install WH_KEYBOARD_LL hook: {} (Error code: {})", e, err_code);
+                eprintln!(
+                    "[HOOK] Failed to install WH_KEYBOARD_LL hook: {} (Error code: {})",
+                    e, err_code
+                );
             }
         }
     });
@@ -227,21 +225,21 @@ pub(crate) fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
             if let Err(e) = window.show() {
                 eprintln!("Failed to show window: {}", e);
             }
-            
+
             // Bring window to front by re-asserting always-on-top
             if let Err(e) = window.set_always_on_top(true) {
                 eprintln!("Failed to set always on top: {}", e);
             }
-            
+
             // DO NOT call set_focus() - let user keep focus on their current app
             // DO NOT emit focus-text-input - only focus when user clicks on Hey Frank
         }
-        
+
         // Emit event to close popovers
         if let Err(e) = window.emit("toggle-window-visibility", ()) {
             eprintln!("Failed to emit toggle-window-visibility event: {}", e);
         }
-        
+
         return;
     }
 
@@ -278,7 +276,7 @@ pub(crate) fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
                 let panel = app.get_webview_panel("main").unwrap();
                 panel.show();
             }
-            
+
             // DO NOT emit focus-text-input - only focus when user clicks
         }
         Err(e) => {
@@ -318,9 +316,14 @@ pub fn update_shortcuts<R: Runtime>(
     for (action_id, binding) in &config.bindings {
         if binding.enabled && !binding.key.is_empty() {
             #[cfg(target_os = "windows")]
-            if action_id == "toggle_window" && binding.key.trim().eq_ignore_ascii_case("shift+backspace") {
+            if action_id == "toggle_window"
+                && binding.key.trim().eq_ignore_ascii_case("shift+backspace")
+            {
                 // Handled via WH_KEYBOARD_LL on Windows to avoid RegisterHotKey Backspace suppression
-                eprintln!("Registered shortcut: {} -> {} (WH_KEYBOARD_LL hook)", action_id, binding.key);
+                eprintln!(
+                    "Registered shortcut: {} -> {} (WH_KEYBOARD_LL hook)",
+                    action_id, binding.key
+                );
                 successfully_registered.insert(action_id.clone(), binding.key.clone());
                 continue;
             }

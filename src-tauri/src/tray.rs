@@ -7,27 +7,21 @@ use tauri::{
 /// Setup system tray with menu
 pub fn setup_system_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     // Create menu items
-    let toggle_window_item = MenuItem::with_id(app, "toggle_window", "Toggle Window", true, None::<&str>)?;
+    let toggle_window_item =
+        MenuItem::with_id(app, "toggle_window", "Toggle Window", true, None::<&str>)?;
     let settings_item = MenuItem::with_id(app, "open_settings", "Settings", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
     // Build menu
-    let menu = Menu::with_items(
-        app,
-        &[
-            &toggle_window_item,
-            &settings_item,
-            &quit_item,
-        ],
-    )?;
+    let menu = Menu::with_items(app, &[&toggle_window_item, &settings_item, &quit_item])?;
 
     // Get the tray icon based on platform
     #[cfg(target_os = "windows")]
     let icon = app.default_window_icon().cloned().unwrap();
-    
+
     #[cfg(target_os = "macos")]
     let icon = app.default_window_icon().cloned().unwrap();
-    
+
     #[cfg(target_os = "linux")]
     let icon = app.default_window_icon().cloned().unwrap();
 
