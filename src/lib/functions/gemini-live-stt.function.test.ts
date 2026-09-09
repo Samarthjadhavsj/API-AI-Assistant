@@ -209,6 +209,16 @@ describe("Gemini transcription configuration", () => {
     controller.abort();
 
     await expect(request).rejects.toMatchObject({ name: "AbortError" });
-    await expectUploadCleanup();
+    
+    // Cleanup happens during the sleep delay, before file polling GET request
+    await vi.waitFor(() => expect(tauriFetch).toHaveBeenCalledTimes(3));
+    const [deleteUrl, deleteRequest] = vi.mocked(tauriFetch).mock.calls[2] || [];
+    expect(String(deleteUrl)).toBe("https://generativelanguage.googleapis.com/v1beta/files/voice");
+    expect(deleteRequest).toEqual(
+      expect.objectContaining({
+        method: "DELETE",
+        headers: { "x-goog-api-key": "AIzaExample" },
+      })
+    );
   });
 });

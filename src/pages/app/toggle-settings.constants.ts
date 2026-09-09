@@ -20,4 +20,9 @@ export const TOGGLE_SETTINGS_SECTIONS = [
   icon: ElementType;
 }>;
 
-export type ToggleSettingsSectionId = (typeof TOGGLE_SETTINGS_SECTIONS)[number]["id"];
+export type ToggleSettingsSectionId = 
+  | (typeof TOGGLE_SETTINGS_SECTIONS)[number]["id"]
+  | "speech"
+  | "screenshot"
+  | "audio"
+  | "prompts";

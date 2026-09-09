@@ -16,7 +16,7 @@ use speaker::VadConfig;
 use windows::Win32::Foundation::HWND;
 #[cfg(target_os = "windows")]
 use windows::Win32::UI::WindowsAndMessaging::{
-    SetWindowPos, HWND_TOPMOST, SWP_NOMOVE, SWP_NOACTIVATE, SWP_NOSIZE, SWP_SHOWWINDOW,
+    SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
 };
 
 #[cfg(target_os = "windows")]
@@ -139,10 +139,10 @@ pub fn run() {
             if let Err(e) = tray::setup_system_tray(app.handle()) {
                 eprintln!("Failed to setup system tray: {}", e);
             }
-            
+
             // Setup main window positioning and configure for persistence
             window::setup_main_window(app).expect("Failed to setup main window");
-            
+
             // Configure window to stay visible (Windows)
             #[cfg(target_os = "windows")]
             {
@@ -152,21 +152,21 @@ pub fn run() {
                         ensure_topmost(HWND(hwnd.0));
                         println!("Applied HWND_TOPMOST for persistent visibility");
                     }
-                    
+
                     // Re-apply topmost on focus loss ONLY if window is actually visible and not hidden by user
                     let overlay_state = app.state::<shortcuts::OverlayState>();
                     let user_hidden = overlay_state.user_hidden.clone();
                     let window_for_handler = main_window.clone();
-                    
+
                     main_window.on_window_event(move |event| {
                         match event {
                             tauri::WindowEvent::Focused(false) => {
                                 // Only re-ensure topmost if user hasn't hidden the window
                                 let is_hidden = user_hidden.load(std::sync::atomic::Ordering::SeqCst);
-                                
+
                                 // Check if window is actually visible before re-ensuring topmost
                                 let is_visible = window_for_handler.is_visible().unwrap_or(false);
-                                
+
                                 if !is_hidden && is_visible {
                                     println!("[FOCUS LOST] Re-ensuring topmost (window visible and not user-hidden)");
                                     if let Ok(hwnd) = window_for_handler.hwnd() {
@@ -179,11 +179,11 @@ pub fn run() {
                             _ => {}
                         }
                     });
-                    
+
                     println!("Configured window for persistent visibility");
                 }
             }
-            
+
             #[cfg(target_os="macos")]
             init(app.app_handle());
 

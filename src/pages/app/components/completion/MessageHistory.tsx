@@ -1,4 +1,4 @@
-import { MessageSquareText, ChevronUp, ChevronDown, ArrowLeft, History } from "lucide-react";
+import { MessageSquareText, ChevronUp, ArrowLeft, History } from "lucide-react";
 import {
   Popover,
   PopoverTrigger,
