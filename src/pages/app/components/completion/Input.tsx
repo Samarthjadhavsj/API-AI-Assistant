@@ -12,6 +12,7 @@ import {
 import { TransparentPopoverContent } from "@/components/ui/popover";
 import { UseCompletionReturn } from "@/types";
 import { MessageHistory } from "./MessageHistory";
+import { MicButton } from "./MicButton";
 
 export const Input = ({
   isPopoverOpen,
@@ -72,6 +73,7 @@ export const Input = ({
                   messageHistoryOpen={messageHistoryOpen}
                   setMessageHistoryOpen={setMessageHistoryOpen}
                 />
+                <MicButton />
               </div>
             )}
 
