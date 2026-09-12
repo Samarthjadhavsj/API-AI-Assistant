@@ -25,7 +25,7 @@ window.addEventListener("beforeunload", cleanupVoiceResources);
 window.addEventListener("unload", cleanupVoiceResources);
 
 // Tauri-specific cleanup on window close
-if (window.__TAURI__) {
+if (typeof window !== 'undefined' && '__TAURI__' in window) {
   currentWindow.onCloseRequested(() => {
     cleanupVoiceResources();
   });

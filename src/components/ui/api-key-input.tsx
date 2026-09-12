@@ -4,10 +4,12 @@ import { Button } from "./button";
 import { Input } from "./input";
 import { cn } from "@/lib/utils";
 
-interface ApiKeyInputProps extends Omit<React.ComponentProps<typeof Input>, "type"> {
+interface ApiKeyInputProps {
   value: string;
   onChange: (value: string) => void;
   className?: string;
+  placeholder?: string;
+  disabled?: boolean;
 }
 
 export function ApiKeyInput({ value, onChange, className, ...props }: ApiKeyInputProps) {
