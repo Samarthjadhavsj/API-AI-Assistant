@@ -12,37 +12,55 @@ mod speaker;
 use capture::CaptureState;
 use speaker::VadConfig;
 
+use windows::Win32::Foundation::GetLastError;
 #[cfg(target_os = "windows")]
 use windows::Win32::Foundation::HWND;
 #[cfg(target_os = "windows")]
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, HWND_TOPMOST, SWP_NOMOVE,
-    SWP_NOSIZE, SWP_SHOWWINDOW, WS_EX_TOOLWINDOW, GetWindowLongW, GWL_STYLE,
+    GetWindowLongPtrW, GetWindowLongW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, GWL_STYLE,
+    HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, WS_EX_TOOLWINDOW,
 };
-use windows::Win32::Foundation::GetLastError;
 
 #[cfg(target_os = "windows")]
 fn apply_overlay_style(hwnd: HWND) {
     unsafe {
-        eprintln!("[OVERLAY] apply_overlay_style() called with HWND: {:?}", hwnd);
+        eprintln!(
+            "[OVERLAY] apply_overlay_style() called with HWND: {:?}",
+            hwnd
+        );
 
         let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-        eprintln!("[OVERLAY] BEFORE SetWindowLongPtrW: ExStyle = 0x{:X}", ex_style);
+        eprintln!(
+            "[OVERLAY] BEFORE SetWindowLongPtrW: ExStyle = 0x{:X}",
+            ex_style
+        );
 
         let new_style = ex_style | WS_EX_TOOLWINDOW.0 as isize;
-        eprintln!("[OVERLAY] Setting ExStyle to: 0x{:X} (adding WS_EX_TOOLWINDOW)", new_style);
+        eprintln!(
+            "[OVERLAY] Setting ExStyle to: 0x{:X} (adding WS_EX_TOOLWINDOW)",
+            new_style
+        );
 
         let result = SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_style);
-        eprintln!("[OVERLAY] SetWindowLongPtrW result: 0x{:X} (previous value)", result);
+        eprintln!(
+            "[OVERLAY] SetWindowLongPtrW result: 0x{:X} (previous value)",
+            result
+        );
 
         if result == 0 {
             let error = GetLastError();
-            eprintln!("[OVERLAY] SetWindowLongPtrW FAILED! GetLastError: {:?}", error);
+            eprintln!(
+                "[OVERLAY] SetWindowLongPtrW FAILED! GetLastError: {:?}",
+                error
+            );
         }
 
         // Verify the change took effect
         let actual_ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-        eprintln!("[OVERLAY] AFTER SetWindowLongPtrW: Actual ExStyle = 0x{:X}", actual_ex_style);
+        eprintln!(
+            "[OVERLAY] AFTER SetWindowLongPtrW: Actual ExStyle = 0x{:X}",
+            actual_ex_style
+        );
 
         // Do not set LWA_ALPHA here. A layered-window alpha of 0 hides the whole HWND,
         // including its WebView content. Tauri/WebView2 already provides per-pixel

@@ -18,16 +18,14 @@ use windows::core::PCWSTR;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, WPARAM};
 #[cfg(target_os = "windows")]
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    RegisterHotKey, UnregisterHotKey, MOD_NOREPEAT, MOD_SHIFT, MOD_CONTROL, VK_BACK,
+    RegisterHotKey, UnregisterHotKey, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, VK_BACK,
 };
 #[cfg(target_os = "windows")]
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DestroyWindow, DispatchMessageW, GetMessageW, PostMessageW,
-    PostThreadMessageW, TranslateMessage, HMENU, MSG, WINDOW_EX_STYLE, WINDOW_STYLE, WM_HOTKEY,
-    WM_QUIT,
-    PeekMessageW, PM_NOREMOVE,
-    WS_EX_TOOLWINDOW, GetWindowLongW, GWL_STYLE, GWL_EXSTYLE, GetWindow, GW_HWNDPREV,
-    GetLayeredWindowAttributes, GetWindowTextW, GetClassNameW,
+    CreateWindowExW, DestroyWindow, DispatchMessageW, GetClassNameW, GetLayeredWindowAttributes,
+    GetMessageW, GetWindow, GetWindowLongW, GetWindowTextW, PeekMessageW, PostMessageW,
+    PostThreadMessageW, TranslateMessage, GWL_EXSTYLE, GWL_STYLE, GW_HWNDPREV, HMENU, MSG,
+    PM_NOREMOVE, WINDOW_EX_STYLE, WINDOW_STYLE, WM_HOTKEY, WM_QUIT, WS_EX_TOOLWINDOW,
 };
 
 #[cfg(target_os = "windows")]
@@ -86,7 +84,9 @@ pub fn setup_windows_hook(app: &AppHandle) {
         };
         // Ensure the thread has a message queue before registering the hotkey
         let mut _msg = MSG::default();
-        unsafe { let _ = PeekMessageW(&mut _msg, hwnd, 0, 0, PM_NOREMOVE); }
+        unsafe {
+            let _ = PeekMessageW(&mut _msg, hwnd, 0, 0, PM_NOREMOVE);
+        }
 
         HOTKEY_HWND.store(hwnd.0 as isize, Ordering::SeqCst);
         eprintln!("[HOTKEY] Hidden HWND created: {:?}", hwnd);
@@ -107,10 +107,15 @@ pub fn setup_windows_hook(app: &AppHandle) {
                 "[HOTKEY] RegisterHotKey failed for Shift+Backspace: {} (GetLastError={})",
                 e, err
             );
-            unsafe { let _ = DestroyWindow(hwnd); }
+            unsafe {
+                let _ = DestroyWindow(hwnd);
+            }
             return;
         } else {
-            eprintln!("[HOTKEY] RegisterHotKey succeeded for Shift+Backspace on HWND {:?}", hwnd);
+            eprintln!(
+                "[HOTKEY] RegisterHotKey succeeded for Shift+Backspace on HWND {:?}",
+                hwnd
+            );
         }
         // Register Ctrl+Backspace diagnostic hotkey
         let registered_ctrl = unsafe {
@@ -129,7 +134,10 @@ pub fn setup_windows_hook(app: &AppHandle) {
                 e, err
             );
         } else {
-            eprintln!("[HOTKEY] RegisterHotKey succeeded for Ctrl+Backspace on HWND {:?}", hwnd);
+            eprintln!(
+                "[HOTKEY] RegisterHotKey succeeded for Ctrl+Backspace on HWND {:?}",
+                hwnd
+            );
         }
 
         let mut msg = MSG::default();
@@ -145,7 +153,9 @@ pub fn setup_windows_hook(app: &AppHandle) {
                         if let Some(app) = GLOBAL_APP_HANDLE.get() {
                             let app_clone = app.clone();
                             tauri::async_runtime::spawn(async move {
-                                eprintln!("[HOTKEY] Spawning async task to call handle_toggle_window");
+                                eprintln!(
+                                    "[HOTKEY] Spawning async task to call handle_toggle_window"
+                                );
                                 handle_toggle_window(&app_clone);
                             });
                         }
@@ -161,7 +171,10 @@ pub fn setup_windows_hook(app: &AppHandle) {
                     }
                     _ => {
                         // Other hotkeys (if any) – just log.
-                        eprintln!("[HOTKEY] WM_HOTKEY received with unknown ID {}", msg.wParam.0);
+                        eprintln!(
+                            "[HOTKEY] WM_HOTKEY received with unknown ID {}",
+                            msg.wParam.0
+                        );
                     }
                 }
             } else {
@@ -206,7 +219,10 @@ impl Default for OverlayState {
         let state = OverlayState {
             user_hidden: Arc::new(AtomicBool::new(true)), // starts hidden
         };
-        eprintln!("[STATE] OverlayState initialized with user_hidden={}", state.user_hidden.load(std::sync::atomic::Ordering::SeqCst));
+        eprintln!(
+            "[STATE] OverlayState initialized with user_hidden={}",
+            state.user_hidden.load(std::sync::atomic::Ordering::SeqCst)
+        );
         state
     }
 }
@@ -299,9 +315,15 @@ pub(crate) fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
 
             // DEBUG: Log style/exstyle BEFORE show()
             if let Ok(hwnd) = window.hwnd() {
-                let style_before = unsafe { GetWindowLongW(windows::Win32::Foundation::HWND(hwnd.0), GWL_STYLE) };
-                let ex_style_before = unsafe { GetWindowLongW(windows::Win32::Foundation::HWND(hwnd.0), GWL_EXSTYLE) };
-                eprintln!("[DEBUG] Style BEFORE show(): 0x{:X}, ExStyle BEFORE show(): 0x{:X}", style_before, ex_style_before);
+                let style_before =
+                    unsafe { GetWindowLongW(windows::Win32::Foundation::HWND(hwnd.0), GWL_STYLE) };
+                let ex_style_before = unsafe {
+                    GetWindowLongW(windows::Win32::Foundation::HWND(hwnd.0), GWL_EXSTYLE)
+                };
+                eprintln!(
+                    "[DEBUG] Style BEFORE show(): 0x{:X}, ExStyle BEFORE show(): 0x{:X}",
+                    style_before, ex_style_before
+                );
             }
 
             let show_res = window.show();
@@ -324,21 +346,33 @@ pub(crate) fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
 
             // DEBUG: Check Win32 window styles
             if let Ok(hwnd) = window.hwnd() {
-                let style = unsafe { GetWindowLongW(windows::Win32::Foundation::HWND(hwnd.0), GWL_STYLE) };
-                let ex_style = unsafe { GetWindowLongW(windows::Win32::Foundation::HWND(hwnd.0), GWL_EXSTYLE) };
+                let style =
+                    unsafe { GetWindowLongW(windows::Win32::Foundation::HWND(hwnd.0), GWL_STYLE) };
+                let ex_style = unsafe {
+                    GetWindowLongW(windows::Win32::Foundation::HWND(hwnd.0), GWL_EXSTYLE)
+                };
                 eprintln!("[DEBUG] Style: 0x{:X}, ExStyle: 0x{:X}", style, ex_style);
 
                 // DEBUG: Check if window is layered and get alpha
                 if ex_style & 0x80000 != 0 {
                     use windows::Win32::UI::WindowsAndMessaging::LAYERED_WINDOW_ATTRIBUTES_FLAGS;
                     let mut alpha: u8 = 0;
-                    let mut flags: LAYERED_WINDOW_ATTRIBUTES_FLAGS = LAYERED_WINDOW_ATTRIBUTES_FLAGS::default();
-                    let result = unsafe { GetLayeredWindowAttributes(windows::Win32::Foundation::HWND(hwnd.0), None, Some(&mut alpha), Some(&mut flags)) };
+                    let mut flags: LAYERED_WINDOW_ATTRIBUTES_FLAGS =
+                        LAYERED_WINDOW_ATTRIBUTES_FLAGS::default();
+                    let result = unsafe {
+                        GetLayeredWindowAttributes(
+                            windows::Win32::Foundation::HWND(hwnd.0),
+                            None,
+                            Some(&mut alpha),
+                            Some(&mut flags),
+                        )
+                    };
                     eprintln!("[DEBUG] Layered window - GetLayeredWindowAttributes result: {:?}, alpha: {}, flags: {:?}", result, alpha, flags);
                 }
 
                 // DEBUG: Check z-order
-                let prev_hwnd = unsafe { GetWindow(windows::Win32::Foundation::HWND(hwnd.0), GW_HWNDPREV) };
+                let prev_hwnd =
+                    unsafe { GetWindow(windows::Win32::Foundation::HWND(hwnd.0), GW_HWNDPREV) };
                 eprintln!("[DEBUG] Window above in z-order: HWND({:?})", prev_hwnd);
 
                 // DEBUG: Identify the covering window
@@ -348,9 +382,11 @@ pub(crate) fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
                         let mut class = [0u16; 256];
                         let title_len = unsafe { GetWindowTextW(prev, &mut title) };
                         let class_len = unsafe { GetClassNameW(prev, &mut class) };
-                        eprintln!("[DEBUG] Covering window title: {:?}, class: {:?}",
+                        eprintln!(
+                            "[DEBUG] Covering window title: {:?}, class: {:?}",
                             String::from_utf16_lossy(&title[..title_len as usize]),
-                            String::from_utf16_lossy(&class[..class_len as usize]));
+                            String::from_utf16_lossy(&class[..class_len as usize])
+                        );
                     } else {
                         eprintln!("[DEBUG] No window above ours (we're at the very top)");
                     }
@@ -397,8 +433,6 @@ pub(crate) fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
         if let Err(e) = window.emit("toggle-window-visibility", ()) {
             eprintln!("Failed to emit toggle-window-visibility event: {}", e);
         }
-
-        return;
     }
 
     #[cfg(not(target_os = "windows"))]
