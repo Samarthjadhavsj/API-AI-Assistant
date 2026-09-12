@@ -73,7 +73,14 @@ export const Input = ({
                   messageHistoryOpen={messageHistoryOpen}
                   setMessageHistoryOpen={setMessageHistoryOpen}
                 />
-                <MicButton />
+                <MicButton
+                  setInput={setInput}
+                  inputRef={inputRef}
+                  isLoading={isLoading}
+                  onError={(errorMessage) => {
+                    setState((prev) => ({ ...prev, error: errorMessage }));
+                  }}
+                />
               </div>
             )}
 
