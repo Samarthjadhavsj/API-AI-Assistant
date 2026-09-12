@@ -16,14 +16,40 @@ use speaker::VadConfig;
 use windows::Win32::Foundation::HWND;
 #[cfg(target_os = "windows")]
 use windows::Win32::UI::WindowsAndMessaging::{
-    SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
+    GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, HWND_TOPMOST, SWP_NOMOVE,
+    SWP_NOSIZE, SWP_SHOWWINDOW, WS_EX_TOOLWINDOW, GetWindowLongW, GWL_STYLE,
 };
+use windows::Win32::Foundation::GetLastError;
 
 #[cfg(target_os = "windows")]
-fn ensure_topmost(hwnd: HWND) {
+fn apply_overlay_style(hwnd: HWND) {
     unsafe {
-        // Use SWP_NOACTIVATE to prevent focus stealing while keeping topmost
-        // This is crucial for transparent windows to not auto-hide
+        eprintln!("[OVERLAY] apply_overlay_style() called with HWND: {:?}", hwnd);
+
+        let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        eprintln!("[OVERLAY] BEFORE SetWindowLongPtrW: ExStyle = 0x{:X}", ex_style);
+
+        let new_style = ex_style | WS_EX_TOOLWINDOW.0 as isize;
+        eprintln!("[OVERLAY] Setting ExStyle to: 0x{:X} (adding WS_EX_TOOLWINDOW)", new_style);
+
+        let result = SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_style);
+        eprintln!("[OVERLAY] SetWindowLongPtrW result: 0x{:X} (previous value)", result);
+
+        if result == 0 {
+            let error = GetLastError();
+            eprintln!("[OVERLAY] SetWindowLongPtrW FAILED! GetLastError: {:?}", error);
+        }
+
+        // Verify the change took effect
+        let actual_ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        eprintln!("[OVERLAY] AFTER SetWindowLongPtrW: Actual ExStyle = 0x{:X}", actual_ex_style);
+
+        // Do not set LWA_ALPHA here. A layered-window alpha of 0 hides the whole HWND,
+        // including its WebView content. Tauri/WebView2 already provides per-pixel
+        // transparency via `transparent: true` and WEBVIEW2_DEFAULT_BACKGROUND_COLOR.
+        // Reapplying a zero global alpha on Focused(false) was why the toggle disappeared
+        // whenever the user clicked another application.
+
         let _ = SetWindowPos(
             hwnd,
             HWND_TOPMOST,
@@ -31,9 +57,10 @@ fn ensure_topmost(hwnd: HWND) {
             0,
             0,
             0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
         );
-        eprintln!("[OVERLAY] Ensured HWND_TOPMOST with SWP_NOACTIVATE");
+
+        eprintln!("[OVERLAY] Applied WS_EX_TOOLWINDOW + HWND_TOPMOST");
     }
 }
 
@@ -147,36 +174,50 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             {
                 if let Some(main_window) = app.get_webview_window("main") {
-                    // Apply Win32 topmost style on Windows
+                    let initial_is_visible = main_window.is_visible().unwrap_or(false);
+                    println!("[SETUP] Main window found, initial is_visible={}", initial_is_visible);
+
+                    // Apply Win32 overlay styles (WS_EX_TOOLWINDOW only, removed WS_EX_NOACTIVATE)
                     if let Ok(hwnd) = main_window.hwnd() {
-                        ensure_topmost(HWND(hwnd.0));
-                        println!("Applied HWND_TOPMOST for persistent visibility");
+                        let h = windows::Win32::Foundation::HWND(hwnd.0);
+
+                        // DEBUG: Log style/exstyle at startup
+                        let startup_style = unsafe { GetWindowLongW(h, GWL_STYLE) };
+                        let startup_ex_style = unsafe { GetWindowLongW(h, GWL_EXSTYLE) };
+                        println!("[STARTUP DEBUG] Style: 0x{:X}, ExStyle: 0x{:X}", startup_style, startup_ex_style);
+
+                        println!("[SETUP] About to call apply_overlay_style() at startup");
+                        apply_overlay_style(h);
+                        println!("Applied Win32 overlay styles (WS_EX_TOOLWINDOW + HWND_TOPMOST)");
                     }
 
-                    // Re-apply topmost on focus loss ONLY if window is actually visible and not hidden by user
+                    // Safety net: re-show window on focus loss if user didn't hide it
                     let overlay_state = app.state::<shortcuts::OverlayState>();
                     let user_hidden = overlay_state.user_hidden.clone();
                     let window_for_handler = main_window.clone();
 
                     main_window.on_window_event(move |event| {
-                        match event {
-                            tauri::WindowEvent::Focused(false) => {
-                                // Only re-ensure topmost if user hasn't hidden the window
-                                let is_hidden = user_hidden.load(std::sync::atomic::Ordering::SeqCst);
+                        if let tauri::WindowEvent::Focused(false) = event {
+                            let current_user_hidden = user_hidden.load(std::sync::atomic::Ordering::SeqCst);
+                            let current_is_visible = window_for_handler.is_visible().unwrap_or(false);
+                            println!("[FOCUS LOST] Event fired. user_hidden={}, is_visible={}", current_user_hidden, current_is_visible);
 
-                                // Check if window is actually visible before re-ensuring topmost
-                                let is_visible = window_for_handler.is_visible().unwrap_or(false);
+                            // Only re-show if user didn't explicitly hide it
+                            if !current_user_hidden {
+                                println!("[AUTO-RESTORE] User didn't hide window, re-showing and re-applying overlay styles");
+                                let show_res = window_for_handler.show();
+                                let is_visible_after_show = window_for_handler.is_visible().unwrap_or(false);
+                                println!("[AUTO-RESTORE] Called show(), result: {:?}, is_visible after: {}", show_res, is_visible_after_show);
 
-                                if !is_hidden && is_visible {
-                                    println!("[FOCUS LOST] Re-ensuring topmost (window visible and not user-hidden)");
-                                    if let Ok(hwnd) = window_for_handler.hwnd() {
-                                        ensure_topmost(HWND(hwnd.0));
-                                    }
-                                } else {
-                                    println!("[FOCUS LOST] Window is hidden or not visible, skipping topmost");
+                                // Re-apply overlay styles
+                                if let Ok(hwnd) = window_for_handler.hwnd() {
+                                    println!("[AUTO-RESTORE] About to call apply_overlay_style() in focus handler");
+                                    apply_overlay_style(HWND(hwnd.0));
+                                    println!("[AUTO-RESTORE] Re-applied overlay styles");
                                 }
+                            } else {
+                                println!("[FOCUS LOST] User hid window (user_hidden=true), NOT restoring");
                             }
-                            _ => {}
                         }
                     });
 
@@ -184,7 +225,7 @@ pub fn run() {
                 }
             }
 
-            #[cfg(target_os="macos")]
+            #[cfg(target_os = "macos")]
             init(app.app_handle());
 
             // Listen for hide-window-clicked event from frontend
@@ -193,9 +234,21 @@ pub fn run() {
                 println!("[X BUTTON] Hide window clicked from frontend");
                 if let Some(window) = app_handle_for_event.get_webview_window("main") {
                     let state = app_handle_for_event.state::<shortcuts::OverlayState>();
-                    state.user_hidden.store(true, std::sync::atomic::Ordering::SeqCst);
-                    if let Err(e) = window.hide() {
-                        eprintln!("Failed to hide window from X button: {}", e);
+                    let before_user_hidden = state.user_hidden.load(std::sync::atomic::Ordering::SeqCst);
+                    let before_is_visible = window.is_visible().unwrap_or(false);
+                    println!("[X BUTTON] BEFORE: user_hidden={}, is_visible={}", before_user_hidden, before_is_visible);
+
+                    state
+                        .user_hidden
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
+                    println!("[X BUTTON] Set user_hidden to true");
+
+                    let hide_res = window.hide();
+                    let after_is_visible = window.is_visible().unwrap_or(false);
+                    println!("[X BUTTON] Called hide(), result: {:?}, is_visible after: {}", hide_res, after_is_visible);
+
+                    if let Err(e) = hide_res {
+                        eprintln!("[X BUTTON] Failed to hide window: {}", e);
                     } else {
                         println!("[X BUTTON] Window hidden successfully");
                     }

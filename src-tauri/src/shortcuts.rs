@@ -9,29 +9,38 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 use tauri_nspanel::ManagerExt;
 
 #[cfg(target_os = "windows")]
-use std::sync::atomic::AtomicU32;
+use std::sync::atomic::{AtomicIsize, AtomicU32};
 #[cfg(target_os = "windows")]
 use std::sync::OnceLock;
 #[cfg(target_os = "windows")]
-use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+use windows::core::PCWSTR;
+#[cfg(target_os = "windows")]
+use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, WPARAM};
 #[cfg(target_os = "windows")]
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    RegisterHotKey, UnregisterHotKey, MOD_NOREPEAT, MOD_SHIFT, VK_BACK,
+    RegisterHotKey, UnregisterHotKey, MOD_NOREPEAT, MOD_SHIFT, MOD_CONTROL, VK_BACK,
 };
 #[cfg(target_os = "windows")]
 use windows::Win32::UI::WindowsAndMessaging::{
-    DispatchMessageW, GetMessageW, PeekMessageW, PostThreadMessageW, TranslateMessage, MSG,
-    PM_NOREMOVE, WM_HOTKEY, WM_QUIT,
+    CreateWindowExW, DestroyWindow, DispatchMessageW, GetMessageW, PostMessageW,
+    PostThreadMessageW, TranslateMessage, HMENU, MSG, WINDOW_EX_STYLE, WINDOW_STYLE, WM_HOTKEY,
+    WM_QUIT,
+    PeekMessageW, PM_NOREMOVE,
+    WS_EX_TOOLWINDOW, GetWindowLongW, GWL_STYLE, GWL_EXSTYLE, GetWindow, GW_HWNDPREV,
+    GetLayeredWindowAttributes, GetWindowTextW, GetClassNameW,
 };
 
 #[cfg(target_os = "windows")]
 static HOOK_THREAD_ID: AtomicU32 = AtomicU32::new(0);
+#[cfg(target_os = "windows")]
+static HOTKEY_HWND: AtomicIsize = AtomicIsize::new(0);
 #[cfg(target_os = "windows")]
 static GLOBAL_APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
 
 /// Fixed hotkey ID used with RegisterHotKey.
 #[cfg(target_os = "windows")]
 const HOTKEY_ID_SHIFT_BACKSPACE: i32 = 1;
+const HOTKEY_ID_CTRL_BACKSPACE: i32 = 2; // Temporary diagnostic hotkey
 
 #[cfg(target_os = "windows")]
 extern "system" {
@@ -40,7 +49,6 @@ extern "system" {
 
 #[cfg(target_os = "windows")]
 pub fn setup_windows_hook(app: &AppHandle) {
-    eprintln!("[HOTKEY] Registering Shift+Backspace hotkey");
     let _ = GLOBAL_APP_HANDLE.set(app.clone());
     if HOOK_THREAD_ID.load(Ordering::SeqCst) != 0 {
         return;
@@ -50,46 +58,111 @@ pub fn setup_windows_hook(app: &AppHandle) {
         let thread_id = unsafe { GetCurrentThreadId() };
         HOOK_THREAD_ID.store(thread_id, Ordering::SeqCst);
 
-        // Create the thread message queue before calling RegisterHotKey.
-        unsafe {
-            let mut dummy_msg = MSG::default();
-            let _ = PeekMessageW(
-                &mut dummy_msg,
-                HWND(std::ptr::null_mut()),
-                0,
-                0,
-                PM_NOREMOVE,
-            );
-        }
+        // Use the built-in system window class "STATIC" (available in user32 without extra registration)
+        let class_name: Vec<u16> = "STATIC\0".encode_utf16().collect();
+        let window_name: Vec<u16> = "FrankHotkeyWindow\0".encode_utf16().collect();
 
-        // Register Shift+Backspace as a system-wide hotkey on this thread.
-        let registered = unsafe {
-            RegisterHotKey(
+        let hwnd = match unsafe {
+            CreateWindowExW(
+                WINDOW_EX_STYLE(WS_EX_TOOLWINDOW.0),
+                PCWSTR(class_name.as_ptr()),
+                PCWSTR(window_name.as_ptr()),
+                WINDOW_STYLE(0),
+                0,
+                0,
+                0,
+                0,
                 HWND(std::ptr::null_mut()),
+                HMENU(std::ptr::null_mut()),
+                HINSTANCE(std::ptr::null_mut()),
+                None,
+            )
+        } {
+            Ok(h) => h,
+            Err(e) => {
+                eprintln!("[HOTKEY] Failed to create hidden window: {}", e);
+                return;
+            }
+        };
+        // Ensure the thread has a message queue before registering the hotkey
+        let mut _msg = MSG::default();
+        unsafe { let _ = PeekMessageW(&mut _msg, hwnd, 0, 0, PM_NOREMOVE); }
+
+        HOTKEY_HWND.store(hwnd.0 as isize, Ordering::SeqCst);
+        eprintln!("[HOTKEY] Hidden HWND created: {:?}", hwnd);
+
+        // Register Shift+Backspace hotkey
+        let registered_shift = unsafe {
+            RegisterHotKey(
+                hwnd,
                 HOTKEY_ID_SHIFT_BACKSPACE,
                 MOD_SHIFT | MOD_NOREPEAT,
                 VK_BACK.0 as u32,
             )
         };
-        if registered.is_err() {
+        if let Err(e) = registered_shift {
+            use windows::Win32::Foundation::GetLastError;
+            let err = unsafe { GetLastError().0 };
+            eprintln!(
+                "[HOTKEY] RegisterHotKey failed for Shift+Backspace: {} (GetLastError={})",
+                e, err
+            );
+            unsafe { let _ = DestroyWindow(hwnd); }
             return;
+        } else {
+            eprintln!("[HOTKEY] RegisterHotKey succeeded for Shift+Backspace on HWND {:?}", hwnd);
+        }
+        // Register Ctrl+Backspace diagnostic hotkey
+        let registered_ctrl = unsafe {
+            RegisterHotKey(
+                hwnd,
+                HOTKEY_ID_CTRL_BACKSPACE,
+                MOD_CONTROL | MOD_NOREPEAT,
+                VK_BACK.0 as u32,
+            )
+        };
+        if let Err(e) = registered_ctrl {
+            use windows::Win32::Foundation::GetLastError;
+            let err = unsafe { GetLastError().0 };
+            eprintln!(
+                "[HOTKEY] RegisterHotKey failed for Ctrl+Backspace: {} (GetLastError={})",
+                e, err
+            );
+        } else {
+            eprintln!("[HOTKEY] RegisterHotKey succeeded for Ctrl+Backspace on HWND {:?}", hwnd);
         }
 
         let mut msg = MSG::default();
         loop {
-            // GetMessageW returns 0 on WM_QUIT, -1 on error, positive otherwise.
             let result = unsafe { GetMessageW(&mut msg, HWND(std::ptr::null_mut()), 0, 0) };
             if result.0 <= 0 {
-                // 0 = WM_QUIT, -1 = error — either way, exit the loop.
                 break;
             }
-            if msg.message == WM_HOTKEY && msg.wParam.0 as i32 == HOTKEY_ID_SHIFT_BACKSPACE {
-                eprintln!("[HOTKEY] Shift+Backspace detected, toggling window");
-                if let Some(app) = GLOBAL_APP_HANDLE.get() {
-                    let app_clone = app.clone();
-                    tauri::async_runtime::spawn(async move {
-                        handle_toggle_window(&app_clone);
-                    });
+            if msg.message == WM_HOTKEY {
+                match msg.wParam.0 as i32 {
+                    HOTKEY_ID_SHIFT_BACKSPACE => {
+                        eprintln!("[HOTKEY] WM_HOTKEY received (Shift+Backspace) on hidden HWND, about to toggle window");
+                        if let Some(app) = GLOBAL_APP_HANDLE.get() {
+                            let app_clone = app.clone();
+                            tauri::async_runtime::spawn(async move {
+                                eprintln!("[HOTKEY] Spawning async task to call handle_toggle_window");
+                                handle_toggle_window(&app_clone);
+                            });
+                        }
+                    }
+                    HOTKEY_ID_CTRL_BACKSPACE => {
+                        eprintln!("[HOTKEY] WM_HOTKEY received (Ctrl+Backspace) on hidden HWND, toggling window");
+                        if let Some(app) = GLOBAL_APP_HANDLE.get() {
+                            let app_clone = app.clone();
+                            tauri::async_runtime::spawn(async move {
+                                handle_toggle_window(&app_clone);
+                            });
+                        }
+                    }
+                    _ => {
+                        // Other hotkeys (if any) – just log.
+                        eprintln!("[HOTKEY] WM_HOTKEY received with unknown ID {}", msg.wParam.0);
+                    }
                 }
             } else {
                 unsafe {
@@ -99,13 +172,22 @@ pub fn setup_windows_hook(app: &AppHandle) {
             }
         }
 
-        // Unregister the hotkey before the thread exits.
-        let _ = unsafe { UnregisterHotKey(HWND(std::ptr::null_mut()), HOTKEY_ID_SHIFT_BACKSPACE) };
+        unsafe {
+            let _ = UnregisterHotKey(hwnd, HOTKEY_ID_SHIFT_BACKSPACE);
+            let _ = DestroyWindow(hwnd);
+        }
+        HOTKEY_HWND.store(0, Ordering::SeqCst);
     });
 }
 
 #[cfg(target_os = "windows")]
 pub fn cleanup_windows_hook() {
+    let hwnd_val = HOTKEY_HWND.swap(0, Ordering::SeqCst);
+    if hwnd_val != 0 {
+        unsafe {
+            let _ = PostMessageW(HWND(hwnd_val as *mut _), WM_QUIT, WPARAM(0), LPARAM(0));
+        }
+    }
     let thread_id = HOOK_THREAD_ID.swap(0, Ordering::SeqCst);
     if thread_id != 0 {
         unsafe {
@@ -121,9 +203,11 @@ pub struct OverlayState {
 
 impl Default for OverlayState {
     fn default() -> Self {
-        OverlayState {
+        let state = OverlayState {
             user_hidden: Arc::new(AtomicBool::new(true)), // starts hidden
-        }
+        };
+        eprintln!("[STATE] OverlayState initialized with user_hidden={}", state.user_hidden.load(std::sync::atomic::Ordering::SeqCst));
+        state
     }
 }
 
@@ -189,6 +273,7 @@ pub fn handle_shortcut_action<R: Runtime>(app: &AppHandle<R>, action_id: &str) {
 
 /// Handle app toggle (hide/show) with input focus and app icon management
 pub(crate) fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
+    eprintln!("[TOGGLE] handle_toggle_window() entered");
     // Get the main window
     let Some(window) = app.get_webview_window("main") else {
         eprintln!("[TOGGLE] Error: Could not get main window");
@@ -198,33 +283,117 @@ pub(crate) fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
     #[cfg(target_os = "windows")]
     {
         let state = app.state::<OverlayState>();
+        let user_hidden = state.user_hidden.load(Ordering::SeqCst);
         let is_visible = window.is_visible().unwrap_or(false);
+        eprintln!(
+            "[TOGGLE] BEFORE: user_hidden={}, is_visible={}",
+            user_hidden, is_visible
+        );
 
-        if is_visible {
-            // Window is visible, hide it
-            eprintln!("[TOGGLE] Hiding window");
-            state.user_hidden.store(true, Ordering::SeqCst);
-            if let Err(e) = window.hide() {
-                eprintln!("Failed to hide window: {}", e);
-            }
-        } else {
-            // Window is hidden, show it
-            eprintln!("[TOGGLE] Showing window");
+        if user_hidden {
             state.user_hidden.store(false, Ordering::SeqCst);
-            if let Err(e) = window.show() {
-                eprintln!("Failed to show window: {}", e);
+            eprintln!(
+                "[TOGGLE] Setting user_hidden to false, now: {}",
+                state.user_hidden.load(Ordering::SeqCst)
+            );
+
+            // DEBUG: Log style/exstyle BEFORE show()
+            if let Ok(hwnd) = window.hwnd() {
+                let style_before = unsafe { GetWindowLongW(windows::Win32::Foundation::HWND(hwnd.0), GWL_STYLE) };
+                let ex_style_before = unsafe { GetWindowLongW(windows::Win32::Foundation::HWND(hwnd.0), GWL_EXSTYLE) };
+                eprintln!("[DEBUG] Style BEFORE show(): 0x{:X}, ExStyle BEFORE show(): 0x{:X}", style_before, ex_style_before);
+            }
+
+            let show_res = window.show();
+            let is_visible_after_show = window.is_visible().unwrap_or(false);
+            eprintln!(
+                "[TOGGLE] Called window.show(), result: {:?}, is_visible after: {}",
+                show_res, is_visible_after_show
+            );
+
+            // DEBUG: Check window position and size
+            let pos = window.outer_position();
+            let size = window.outer_size();
+            eprintln!("[DEBUG] Position: {:?}, Size: {:?}", pos, size);
+
+            // DEBUG: Check monitor information
+            let monitors = window.available_monitors();
+            eprintln!("[DEBUG] Available monitors: {:?}", monitors);
+            let current_monitor = window.current_monitor();
+            eprintln!("[DEBUG] Current monitor: {:?}", current_monitor);
+
+            // DEBUG: Check Win32 window styles
+            if let Ok(hwnd) = window.hwnd() {
+                let style = unsafe { GetWindowLongW(windows::Win32::Foundation::HWND(hwnd.0), GWL_STYLE) };
+                let ex_style = unsafe { GetWindowLongW(windows::Win32::Foundation::HWND(hwnd.0), GWL_EXSTYLE) };
+                eprintln!("[DEBUG] Style: 0x{:X}, ExStyle: 0x{:X}", style, ex_style);
+
+                // DEBUG: Check if window is layered and get alpha
+                if ex_style & 0x80000 != 0 {
+                    use windows::Win32::UI::WindowsAndMessaging::LAYERED_WINDOW_ATTRIBUTES_FLAGS;
+                    let mut alpha: u8 = 0;
+                    let mut flags: LAYERED_WINDOW_ATTRIBUTES_FLAGS = LAYERED_WINDOW_ATTRIBUTES_FLAGS::default();
+                    let result = unsafe { GetLayeredWindowAttributes(windows::Win32::Foundation::HWND(hwnd.0), None, Some(&mut alpha), Some(&mut flags)) };
+                    eprintln!("[DEBUG] Layered window - GetLayeredWindowAttributes result: {:?}, alpha: {}, flags: {:?}", result, alpha, flags);
+                }
+
+                // DEBUG: Check z-order
+                let prev_hwnd = unsafe { GetWindow(windows::Win32::Foundation::HWND(hwnd.0), GW_HWNDPREV) };
+                eprintln!("[DEBUG] Window above in z-order: HWND({:?})", prev_hwnd);
+
+                // DEBUG: Identify the covering window
+                if let Ok(prev) = prev_hwnd {
+                    if !prev.is_invalid() {
+                        let mut title = [0u16; 256];
+                        let mut class = [0u16; 256];
+                        let title_len = unsafe { GetWindowTextW(prev, &mut title) };
+                        let class_len = unsafe { GetClassNameW(prev, &mut class) };
+                        eprintln!("[DEBUG] Covering window title: {:?}, class: {:?}",
+                            String::from_utf16_lossy(&title[..title_len as usize]),
+                            String::from_utf16_lossy(&class[..class_len as usize]));
+                    } else {
+                        eprintln!("[DEBUG] No window above ours (we're at the very top)");
+                    }
+                }
             }
 
             // Bring window to front by re-asserting always-on-top
-            if let Err(e) = window.set_always_on_top(true) {
-                eprintln!("Failed to set always on top: {}", e);
-            }
+            let aot_res = window.set_always_on_top(true);
+            let is_visible_after_aot = window.is_visible().unwrap_or(false);
+            eprintln!(
+                "[TOGGLE] Called set_always_on_top(true), result: {:?}, is_visible after: {}",
+                aot_res, is_visible_after_aot
+            );
 
             // DO NOT call set_focus() - let user keep focus on their current app
             // DO NOT emit focus-text-input - only focus when user clicks on Hey Frank
+        } else {
+            eprintln!("[TOGGLE] Window is visible, attempting to hide it");
+            state.user_hidden.store(true, Ordering::SeqCst);
+            eprintln!(
+                "[TOGGLE] Set user_hidden to true, now: {}",
+                state.user_hidden.load(Ordering::SeqCst)
+            );
+
+            let hide_res = window.hide();
+            let is_visible_after_hide = window.is_visible().unwrap_or(false);
+            eprintln!(
+                "[TOGGLE] Called window.hide(), result: {:?}, is_visible after: {}",
+                hide_res, is_visible_after_hide
+            );
+
+            if let Err(e) = hide_res {
+                eprintln!("[TOGGLE] Failed to hide window: {}", e);
+            }
         }
 
-        // Emit event to close popovers
+        let final_is_visible = window.is_visible().unwrap_or(false);
+        let final_user_hidden = state.user_hidden.load(Ordering::SeqCst);
+        eprintln!(
+            "[TOGGLE] AFTER: user_hidden={}, is_visible={}",
+            final_user_hidden, final_is_visible
+        );
+
         if let Err(e) = window.emit("toggle-window-visibility", ()) {
             eprintln!("Failed to emit toggle-window-visibility event: {}", e);
         }
@@ -308,9 +477,9 @@ pub fn update_shortcuts<R: Runtime>(
             if action_id == "toggle_window"
                 && binding.key.trim().eq_ignore_ascii_case("shift+backspace")
             {
-                // Handled via WH_KEYBOARD_LL on Windows to avoid RegisterHotKey Backspace suppression
+                // Handled via RegisterHotKey on Windows to avoid conflict
                 eprintln!(
-                    "Registered shortcut: {} -> {} (WH_KEYBOARD_LL hook)",
+                    "Registered shortcut: {} -> {} (RegisterHotKey)",
                     action_id, binding.key
                 );
                 successfully_registered.insert(action_id.clone(), binding.key.clone());
