@@ -48,16 +48,14 @@ pub fn setup_system_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
             _ => {}
         })
         .on_tray_icon_event(move |_tray, event| {
-            match event {
-                TrayIconEvent::Click {
-                    button: MouseButton::Left,
-                    button_state: MouseButtonState::Up,
-                    ..
-                } => {
-                    // On left click, toggle the main window
-                    handle_toggle_window(&app_handle);
-                }
-                _ => {}
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                // On left click, toggle the main window
+                handle_toggle_window(&app_handle);
             }
         })
         .build(app)?;
@@ -72,29 +70,44 @@ fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
         let state = app.state::<OverlayState>();
         let user_hidden = state.user_hidden.load(Ordering::SeqCst);
         let is_visible = window.is_visible().unwrap_or(false);
-        println!("[TRAY] BEFORE: user_hidden={}, is_visible={}", user_hidden, is_visible);
+        println!(
+            "[TRAY] BEFORE: user_hidden={}, is_visible={}",
+            user_hidden, is_visible
+        );
 
         if user_hidden {
             state.user_hidden.store(false, Ordering::SeqCst);
             println!("[TRAY] Setting user_hidden to false, showing window");
             let show_res = window.show();
             let is_visible_after = window.is_visible().unwrap_or(false);
-            println!("[TRAY] Called show(), result: {:?}, is_visible after: {}", show_res, is_visible_after);
+            println!(
+                "[TRAY] Called show(), result: {:?}, is_visible after: {}",
+                show_res, is_visible_after
+            );
 
             // Bring window to front by re-asserting always-on-top
             let aot_res = window.set_always_on_top(true);
-            println!("[TRAY] Called set_always_on_top(true), result: {:?}", aot_res);
+            println!(
+                "[TRAY] Called set_always_on_top(true), result: {:?}",
+                aot_res
+            );
         } else {
             state.user_hidden.store(true, Ordering::SeqCst);
             println!("[TRAY] Setting user_hidden to true, hiding window");
             let hide_res = window.hide();
             let is_visible_after = window.is_visible().unwrap_or(false);
-            println!("[TRAY] Called hide(), result: {:?}, is_visible after: {}", hide_res, is_visible_after);
+            println!(
+                "[TRAY] Called hide(), result: {:?}, is_visible after: {}",
+                hide_res, is_visible_after
+            );
         }
 
         let final_user_hidden = state.user_hidden.load(Ordering::SeqCst);
         let final_is_visible = window.is_visible().unwrap_or(false);
-        println!("[TRAY] AFTER: user_hidden={}, is_visible={}", final_user_hidden, final_is_visible);
+        println!(
+            "[TRAY] AFTER: user_hidden={}, is_visible={}",
+            final_user_hidden, final_is_visible
+        );
     }
 }
 
