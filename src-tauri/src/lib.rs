@@ -12,6 +12,7 @@ mod speaker;
 use capture::CaptureState;
 use speaker::VadConfig;
 
+#[cfg(target_os = "windows")]
 use windows::Win32::Foundation::GetLastError;
 #[cfg(target_os = "windows")]
 use windows::Win32::Foundation::HWND;
