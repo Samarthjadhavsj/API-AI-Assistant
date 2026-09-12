@@ -110,6 +110,7 @@ export function VoiceInputBar({
 
     return () => {
       cleanupAudio();
+      cleanupStream();
     };
   }, [stream, state]);
 
@@ -224,20 +225,7 @@ export function VoiceInputBar({
     return () => {
       console.log("[VoiceInputBar] Component unmounting, performing final cleanup");
       cleanupAudio();
-      // Clean up any lingering stream from ref
-      if (streamRef.current) {
-        console.log("[VoiceInputBar] Cleaning up lingering stream on unmount");
-        streamRef.current.getTracks().forEach(track => {
-          try {
-            if (track.readyState !== 'ended') {
-              track.stop();
-            }
-          } catch (error) {
-            console.error("[VoiceInputBar] Error stopping lingering track:", error);
-          }
-        });
-        streamRef.current = null;
-      }
+      cleanupStream();
     };
   }, []);
 
