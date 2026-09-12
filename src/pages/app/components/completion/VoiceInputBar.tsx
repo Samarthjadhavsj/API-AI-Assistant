@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Plus, Mic, Activity, ChevronDown, X, Check } from "lucide-react";
+import { Plus, Mic, X, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type VoiceInputState = "idle" | "listening" | "active";
@@ -42,13 +42,9 @@ export function VoiceInputBar({
   onPaste,
   disabled = false,
 }: VoiceInputBarProps) {
-  const [audioLevel, setAudioLevel] = useState(0);
   const [isAboveThreshold, setIsAboveThreshold] = useState(false);
   const [dotHeights, setDotHeights] = useState<number[]>(Array(ANIMATION_CONFIG.DOT_COUNT).fill(2));
-  const [dotPositions, setDotPositions] = useState<number[]>(
-    Array(ANIMATION_CONFIG.DOT_COUNT).fill(0).map((_, i) => i)
-  );
-  const animationRef = useRef<number>();
+  const animationRef = useRef<number | undefined>(undefined);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const animationTimeRef = useRef<number>(0);
@@ -139,8 +135,7 @@ export function VoiceInputBar({
       }
       const average = sum / dataArray.length;
 
-      setAudioLevel(average);
-      const isSpeaking = average > AMPLITUDE_THRESHOLD;
+      const isSpeaking = average > ANIMATION_CONFIG.AMPLITUDE_THRESHOLD;
       setIsAboveThreshold(isSpeaking);
 
       // Update animation time for flow effect
@@ -152,7 +147,7 @@ export function VoiceInputBar({
       
       for (let i = 0; i < ANIMATION_CONFIG.DOT_COUNT; i++) {
         const dataIndex = i * step;
-        const value = dataArray[dataIndex] || 0;
+        const value = dataArray[dataIndex] !== undefined ? dataArray[dataIndex] : 0;
         
         if (isSpeaking) {
           // When speaking, transform dots to bars based on frequency
