@@ -4,7 +4,6 @@ import {
   PopoverTrigger,
   Button,
   ScrollArea,
-  Input as InputComponent,
   Markdown,
   Switch,
   CopyButton,
@@ -12,7 +11,10 @@ import {
 import { TransparentPopoverContent } from "@/components/ui/popover";
 import { UseCompletionReturn } from "@/types";
 import { MessageHistory } from "./MessageHistory";
-import { MicButton } from "./MicButton";
+import { VoiceInputBar } from "./VoiceInputBar";
+import { useState, useEffect } from "react";
+import { useVoiceInput } from "@/hooks/useVoiceInput";
+import { useApp } from "@/contexts";
 
 export const Input = ({
   isPopoverOpen,
@@ -35,7 +37,110 @@ export const Input = ({
   isHidden,
   keepEngaged,
   setKeepEngaged,
-}: UseCompletionReturn & { isHidden: boolean }) => {
+  onVoiceStateChange,
+}: UseCompletionReturn & { isHidden: boolean; onVoiceStateChange?: (state: string) => void }) => {
+  const [voiceState, setVoiceState] = useState<"idle" | "listening" | "active">("idle");
+  const [voiceTranscript, setVoiceTranscript] = useState("");
+  const [voiceStream, setVoiceStream] = useState<MediaStream | null>(null);
+  const { selectedAudioDevices, selectedSttProvider } = useApp();
+  const isProviderConfigured = Boolean(selectedSttProvider.variables.api_key?.trim());
+
+  const voice = useVoiceInput({
+    maxDurationMs: 3 * 60 * 1000,
+    onResult: (result) => {
+      const transcript = result.text.trim();
+      if (transcript) {
+        setVoiceTranscript(transcript);
+      }
+    },
+  });
+
+  const handleMicClick = async () => {
+    if (!isProviderConfigured) {
+      console.warn("[VoiceInput] STT provider not configured");
+      return;
+    }
+
+    console.log("[VoiceInput] Mic clicked, current voiceState:", voiceState);
+
+    if (voiceState === "idle") {
+      console.log("[VoiceInput] Starting voice recording...");
+      setVoiceState("listening");
+      try {
+        await voice.start(selectedAudioDevices.input || undefined);
+        console.log("[VoiceInput] Voice recording started successfully");
+      } catch (error) {
+        console.error("[VoiceInput] Failed to start voice recording:", error);
+        setVoiceState("idle");
+        // Optionally show a toast/error to the user here
+      }
+    } else {
+      console.log("[VoiceInput] Canceling voice recording...");
+      handleVoiceCancel();
+    }
+  };
+
+  const handleVoiceCancel = () => {
+    console.log("[VoiceInput] Voice canceled");
+    voice.cancel();
+    setVoiceState("idle");
+    setVoiceTranscript("");
+    setVoiceStream(null);
+  };
+
+  const handleVoiceConfirm = async () => {
+    console.log("[VoiceInput] Voice confirmed, transcript:", voiceTranscript);
+    if (voiceTranscript) {
+      setInput(voiceTranscript);
+      // Focus the input after setting the transcript
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 100);
+    }
+    console.log("[VoiceInput] Stopping voice recording...");
+    try {
+      await voice.stop();
+      console.log("[VoiceInput] Voice recording stopped successfully");
+    } catch (error) {
+      console.error("[VoiceInput] Error stopping voice recording:", error);
+    }
+    setVoiceState("idle");
+    setVoiceTranscript("");
+    setVoiceStream(null);
+  };
+
+  // Update voice stream when recording
+  useEffect(() => {
+    console.log("[VoiceInput] Voice state changed:", voice.state, "Stream:", !!voice.stream, voice.stream ? `(${voice.stream.getTracks().length} tracks)` : "");
+    if (voice.state === "recording" && voice.stream) {
+      setVoiceStream(voice.stream);
+    } else {
+      setVoiceStream(null);
+    }
+  }, [voice.state, voice.stream]);
+
+  // Auto-transition to active state when voice is detected
+  useEffect(() => {
+    console.log("[VoiceInput] Checking transition: voiceState=", voiceState, "transcript=", voiceTranscript);
+    if (voiceState === "listening" && voiceTranscript) {
+      console.log("[VoiceInput] Transitioning to active state");
+      setVoiceState("active");
+    }
+  }, [voiceTranscript, voiceState]);
+
+  // Reset to idle when voice stops
+  useEffect(() => {
+    if (voice.state === "idle" && voiceState !== "idle") {
+      console.log("[VoiceInput] Voice controller is idle, resetting UI state");
+      setVoiceState("idle");
+    }
+  }, [voice.state, voiceState]);
+
+  // Notify parent of voice state changes
+  useEffect(() => {
+    onVoiceStateChange?.(voiceState);
+  }, [voiceState, onVoiceStateChange]);
+
   return (
     <div className="relative flex-1">
       <Popover
@@ -47,41 +152,33 @@ export const Input = ({
         }}
       >
         <PopoverTrigger asChild className="!border-none !bg-transparent">
-          <div className="relative select-none">
-            <InputComponent
-              ref={inputRef}
-              placeholder="Ask me anything..."
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
+          <div className="relative select-none flex items-center gap-2 w-full">
+            <VoiceInputBar
+              state={voiceState}
+              transcript={voiceTranscript}
+              stream={voiceStream}
+              onMicClick={handleMicClick}
+              onCancel={handleVoiceCancel}
+              onConfirm={handleVoiceConfirm}
+              className="flex-1"
+              inputValue={input}
+              onInputChange={setInput}
+              inputRef={inputRef}
               onKeyPress={handleKeyPress}
               onPaste={handlePaste}
               disabled={isLoading || isHidden}
-              className={`${
-                currentConversationId && conversationHistory.length > 0
-                  ? "pr-14"
-                  : "pr-2"
-              }`}
             />
-
-            {/* Conversation History Icon - Always visible */}
-            {!isLoading && (
-              <div className="absolute select-none right-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                <MessageHistory
-                  conversationHistory={conversationHistory}
-                  currentConversationId={currentConversationId}
-                  onStartNewConversation={startNewConversation}
-                  messageHistoryOpen={messageHistoryOpen}
-                  setMessageHistoryOpen={setMessageHistoryOpen}
-                />
-                <MicButton />
-              </div>
+            {!isLoading && voiceState === "idle" && (
+              <MessageHistory
+                conversationHistory={conversationHistory}
+                currentConversationId={currentConversationId}
+                onStartNewConversation={startNewConversation}
+                messageHistoryOpen={messageHistoryOpen}
+                setMessageHistoryOpen={setMessageHistoryOpen}
+              />
             )}
-
-            {/* Loading indicator */}
-            {isLoading && (
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 animate-pulse">
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-              </div>
+            {!isLoading && voiceState !== "idle" && (
+              <div className="w-8 shrink-0" />
             )}
           </div>
         </PopoverTrigger>

@@ -131,6 +131,13 @@ export class RecorderEngine implements IRecorderEngine {
   }
 
   releaseTracks() {
-    this.stream.getTracks().forEach((track) => track.stop());
+    console.log("[RecorderEngine] Releasing media stream tracks", {
+      trackCount: this.stream.getTracks().length,
+      tracks: this.stream.getTracks().map(t => ({ id: t.id, kind: t.kind, readyState: t.readyState }))
+    });
+    this.stream.getTracks().forEach((track) => {
+      console.log("[RecorderEngine] Stopping track", { id: track.id, kind: track.kind, readyState: track.readyState });
+      track.stop();
+    });
   }
 }

@@ -68,11 +68,15 @@ export class VoiceRecorderController {
   }
 
   private releaseEngine() {
-    this.engine?.releaseTracks();
-    this.engine = null;
+    if (this.engine) {
+      console.log("[VoiceController] Releasing engine and stopping tracks");
+      this.engine.releaseTracks();
+      this.engine = null;
+    }
   }
 
   private reset() {
+    console.log("[VoiceController] Resetting controller state");
     this.clearTimers();
     this.abortController = null;
     this.activeAdapter = null;
@@ -119,9 +123,11 @@ export class VoiceRecorderController {
 
   async start(options: VoiceStartOptions): Promise<boolean> {
     if (BUSY_STATES.has(this.snapshot.state)) {
+      console.warn("[VoiceController] Cannot start: already in busy state", this.snapshot.state);
       throw voiceError("recording_already_active");
     }
     if (!options.adapter) {
+      console.error("[VoiceController] Cannot start: no STT adapter configured");
       const error = voiceError("provider_not_configured");
       this.publish({
         ...IDLE_SNAPSHOT,
@@ -133,6 +139,7 @@ export class VoiceRecorderController {
     }
 
     const sessionId = ++this.sessionId;
+    console.log("[VoiceController] Starting new session", { sessionId, ownerId: options.ownerId, deviceId: options.deviceId });
     this.activeAdapter = options.adapter;
     this.activeOnResult = options.onResult;
     const deviceId = options.deviceId || null;
@@ -147,6 +154,7 @@ export class VoiceRecorderController {
     try {
       stream = await this.permissionGateway.request(deviceId || undefined);
     } catch (error) {
+      console.error("[VoiceController] Failed to get microphone permission", { sessionId, error });
       this.fail(
         error instanceof MicPermissionTimeoutError
           ? voiceError("permission_timeout", error)
@@ -157,6 +165,7 @@ export class VoiceRecorderController {
     }
 
     if (sessionId !== this.sessionId) {
+      console.warn("[VoiceController] Session invalidated during permission request, stopping stream", { sessionId, currentSessionId: this.sessionId });
       stream.getTracks().forEach((track) => track.stop());
       return false;
     }
@@ -165,11 +174,15 @@ export class VoiceRecorderController {
       const engine = this.createEngine({
         stream,
         deviceId,
-        onFailure: (error) => this.fail(voiceError("recorder_failed", error), sessionId),
+        onFailure: (error) => {
+          console.error("[VoiceController] Engine failure", { sessionId, error });
+          this.fail(voiceError("recorder_failed", error), sessionId);
+        },
       });
       this.engine = engine;
       engine.start();
       const startedAt = Date.now();
+      console.log("[VoiceController] Recording started successfully", { sessionId, startedAt, deviceId });
       this.publish({
         state: "recording",
         error: null,
@@ -187,11 +200,13 @@ export class VoiceRecorderController {
       }, 250);
       if (options.maxDurationMs) {
         this.maxDurationTimer = setTimeout(() => {
+          console.log("[VoiceController] Max duration reached, stopping", { sessionId, maxDurationMs: options.maxDurationMs });
           void this.stop().catch(() => undefined);
         }, options.maxDurationMs);
       }
       return true;
     } catch (error) {
+      console.error("[VoiceController] Failed to create recording engine", { sessionId, error });
       stream.getTracks().forEach((track) => track.stop());
       this.fail(voiceError("recorder_unsupported_mimetype", error), sessionId);
       return false;
@@ -256,6 +271,7 @@ export class VoiceRecorderController {
     if (!this.isOwnedBy(ownerId)) return;
     if (this.snapshot.state === "idle") return;
 
+    console.log("[VoiceController] Canceling session", { sessionId: this.sessionId, ownerId });
     const engine = this.engine;
     ++this.sessionId;
     this.clearTimers();
@@ -266,11 +282,15 @@ export class VoiceRecorderController {
     this.engine = null;
     this.publish(IDLE_SNAPSHOT);
     if (engine) {
-      void engine.cancel().finally(() => engine.releaseTracks());
+      void engine.cancel().finally(() => {
+        console.log("[VoiceController] Engine canceled and tracks released");
+        engine.releaseTracks();
+      });
     }
   }
 
   dispose() {
+    console.log("[VoiceController] Disposing controller");
     this.cancel();
     this.listeners.clear();
   }

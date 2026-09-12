@@ -1,6 +1,6 @@
 import type { ComponentType } from "react";
 import { useSettings } from "@/hooks";
-import { AIProviders, STTProviders } from "@/pages/dev/components";
+import { AIProviders } from "@/pages/dev/components";
 import {
   AutoScrollToggle,
   LanguageSelector,
@@ -14,6 +14,7 @@ import {
 } from "@/pages/shortcuts/components";
 import { SystemPromptsContent } from "@/pages/system-prompts";
 import { Theme } from "@/pages/settings/components";
+import { VoiceTranscriptionSettings } from "./components/VoiceTranscriptionSettings";
 import type { ToggleSettingsSectionId } from "./toggle-settings.constants";
 
 const AppearanceSettings = () => <Theme />;
@@ -26,7 +27,7 @@ const ProviderSettings = () => {
 /** Kept separate so microphone setup is never buried below AI-provider UI. */
 const SpeechToTextSettings = () => {
   const settings = useSettings();
-  return <STTProviders {...settings} />;
+  return <VoiceTranscriptionSettings {...settings} />;
 };
 
 const ResponseSettings = () => (

@@ -2,7 +2,6 @@ import { UseCompletionReturn } from "@/types";
 import { Files } from "./Files";
 import { Input } from "./Input";
 import { Screenshot } from "./Screenshot";
-import { MicButton } from "./MicButton";
 
 /**
  * Submits a voice transcript by appending it to the existing prompt.
@@ -41,14 +40,14 @@ export const shouldIgnoreVoiceShortcut = ({
 /** Simplified composer with voice recording */
 export const VoiceComposer = ({
   isHidden,
+  onVoiceStateChange,
   ...completion
-}: UseCompletionReturn & { isHidden: boolean }) => {
+}: UseCompletionReturn & { isHidden: boolean; onVoiceStateChange?: (state: string) => void }) => {
   return (
     <>
-      <Input {...completion} isHidden={isHidden} />
+      <Input {...completion} isHidden={isHidden} onVoiceStateChange={onVoiceStateChange} />
       <Screenshot {...completion} />
       <Files {...completion} />
-      <MicButton />
     </>
   );
 };

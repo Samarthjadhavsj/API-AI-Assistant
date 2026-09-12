@@ -10,12 +10,14 @@ import { ErrorBoundary } from "react-error-boundary";
 import { ErrorLayout } from "@/layouts";
 import { getPlatform } from "@/lib";
 import { useNavigate } from "react-router-dom";
+import { useState } from "react";
 
 const App = () => {
   const { isHidden } = useApp();
   const { customizable } = useAppContext();
   const platform = getPlatform();
   const navigate = useNavigate();
+  const [voiceState, setVoiceState] = useState("idle");
 
   const hideWindow = async () => {
     try {
@@ -42,41 +44,43 @@ const App = () => {
       <div
         className="w-screen h-screen flex overflow-hidden justify-center items-start"
       >
-        <Card className="w-full flex flex-row items-center gap-2 p-2">
+        <Card className="w-full flex flex-row items-center gap-2 py-2 px-3">
           {/* App Icon on the left */}
           <div className="shrink-0" data-tauri-drag-region={false}>
             <img 
               src="/icon.png" 
               alt="Hey Frank" 
-              className="h-8 w-8 rounded-md object-contain"
+              className="h-7 w-7 rounded-md object-contain"
               draggable={false}
             />
           </div>
           
           <div className="w-full flex flex-row gap-2 items-center">
-            <Completion isHidden={isHidden} />
-            <div className="flex gap-2 relative z-50" style={{ pointerEvents: 'auto' }} data-tauri-drag-region={false}>
-              <Button
-                size={"icon"}
-                variant={"ghost"}
-                className="cursor-pointer h-8 w-8 shrink-0"
-                title="Open Settings"
-                onClick={openSettings}
-                data-tauri-drag-region={false}
-              >
-                <SettingsIcon className="h-4 w-4" />
-              </Button>
-              <Button
-                size={"icon"}
-                variant={"ghost"}
-                className="cursor-pointer h-8 w-8 shrink-0"
-                title="Hide window (Shift+\ to show again)"
-                onClick={hideWindow}
-                data-tauri-drag-region={false}
-              >
-                <XIcon className="h-4 w-4" />
-              </Button>
-            </div>
+            <Completion isHidden={isHidden} onVoiceStateChange={setVoiceState} />
+            {voiceState === "idle" && (
+              <div className="flex gap-2 relative z-50" style={{ pointerEvents: 'auto' }} data-tauri-drag-region={false}>
+                <Button
+                  size={"icon"}
+                  variant={"ghost"}
+                  className="cursor-pointer h-8 w-8 shrink-0"
+                  title="Open Settings"
+                  onClick={openSettings}
+                  data-tauri-drag-region={false}
+                >
+                  <SettingsIcon className="h-4 w-4" />
+                </Button>
+                <Button
+                  size={"icon"}
+                  variant={"ghost"}
+                  className="cursor-pointer h-8 w-8 shrink-0"
+                  title="Hide window (Shift+\ to show again)"
+                  onClick={hideWindow}
+                  data-tauri-drag-region={false}
+                >
+                  <XIcon className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
           </div>
 
           <DragButton />

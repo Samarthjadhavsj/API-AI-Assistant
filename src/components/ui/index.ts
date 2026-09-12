@@ -15,3 +15,4 @@ export * from "./dropdown-menu";
 export * from "./chart";
 export * from "./empty";
 export * from "./badge";
+export * from "./api-key-input";

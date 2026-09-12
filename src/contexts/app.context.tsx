@@ -103,12 +103,37 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [customSttProviders, setCustomSttProviders] = useState<TYPE_PROVIDER[]>(
     []
   );
+  
+  // Initialize with saved value from localStorage to prevent empty state overwriting saved data
   const [selectedSttProvider, setSelectedSttProvider] = useState<{
     provider: string;
     variables: Record<string, string>;
-  }>({
-    provider: GEMINI_TRANSCRIBE_PROVIDER_ID,
-    variables: { model: GEMINI_TRANSCRIBE_MODEL, api_key: "" },
+  }>(() => {
+    try {
+      const savedSelectedStt = safeLocalStorage.getItem(STORAGE_KEYS.SELECTED_STT_PROVIDER);
+      if (savedSelectedStt) {
+        const saved = JSON.parse(savedSelectedStt) as {
+          provider?: string;
+          variables?: Record<string, string>;
+        };
+        console.log("[AppContext] Loaded STT provider from localStorage:", saved);
+        return {
+          provider: GEMINI_TRANSCRIBE_PROVIDER_ID,
+          variables: {
+            api_key: saved.variables?.api_key || "",
+            model: GEMINI_TRANSCRIBE_MODEL,
+          },
+        };
+      }
+    } catch (error) {
+      console.error("[AppContext] Failed to load STT provider from localStorage:", error);
+    }
+    // Default state only if nothing is saved
+    console.log("[AppContext] Using default STT provider state");
+    return {
+      provider: GEMINI_TRANSCRIBE_PROVIDER_ID,
+      variables: { model: GEMINI_TRANSCRIBE_MODEL, api_key: "" },
+    };
   });
 
   const [screenshotConfiguration, setScreenshotConfiguration] =
@@ -176,6 +201,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const savedSelectedStt = safeLocalStorage.getItem(
       STORAGE_KEYS.SELECTED_STT_PROVIDER
     );
+    console.log("[AppContext.loadData] Loading STT provider from localStorage:", savedSelectedStt);
     if (savedSelectedStt) {
       try {
         const saved = JSON.parse(savedSelectedStt) as {
@@ -183,6 +209,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         };
         // Retain an existing API key while migrating every old provider
         // selection into the sole supported Gemini workflow.
+        console.log("[AppContext.loadData] Parsed STT provider:", saved);
         setSelectedSttProvider({
           provider: GEMINI_TRANSCRIBE_PROVIDER_ID,
           variables: {
@@ -190,12 +217,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             model: GEMINI_TRANSCRIBE_MODEL,
           },
         });
-      } catch {
+      } catch (error) {
+        console.error("[AppContext.loadData] Failed to parse STT provider:", error);
         setSelectedSttProvider({
           provider: GEMINI_TRANSCRIBE_PROVIDER_ID,
           variables: { api_key: "", model: GEMINI_TRANSCRIBE_MODEL },
         });
       }
+    } else {
+      console.log("[AppContext.loadData] No saved STT provider found in localStorage");
     }
 
     // Load customizable state
@@ -393,6 +423,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   // Sync selected STT to localStorage
   useEffect(() => {
     if (selectedSttProvider.provider) {
+      console.log("[AppContext] Saving STT provider to localStorage:", selectedSttProvider);
       safeLocalStorage.setItem(
         STORAGE_KEYS.SELECTED_STT_PROVIDER,
         JSON.stringify(selectedSttProvider)
