@@ -13,22 +13,10 @@ import {
   ShortcutManager,
 } from "@/pages/shortcuts/components";
 import { SystemPromptsContent } from "@/pages/system-prompts";
-import {
-  AlwaysOnTopToggle,
-  AppIconToggle,
-  AutostartToggle,
-  Theme,
-} from "@/pages/settings/components";
+import { Theme } from "@/pages/settings/components";
 import type { ToggleSettingsSectionId } from "./toggle-settings.constants";
 
-const AppearanceSettings = () => (
-  <>
-    <Theme />
-    <AutostartToggle />
-    <AppIconToggle />
-    <AlwaysOnTopToggle />
-  </>
-);
+const AppearanceSettings = () => <Theme />;
 
 const ProviderSettings = () => {
   const settings = useSettings();
