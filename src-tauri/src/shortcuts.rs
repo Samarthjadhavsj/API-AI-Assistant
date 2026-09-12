@@ -22,10 +22,9 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 #[cfg(target_os = "windows")]
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DestroyWindow, DispatchMessageW, GetClassNameW, GetLayeredWindowAttributes,
-    GetMessageW, GetWindow, GetWindowLongW, GetWindowTextW, PeekMessageW, PostMessageW,
-    PostThreadMessageW, TranslateMessage, GWL_EXSTYLE, GWL_STYLE, GW_HWNDPREV, HMENU, MSG,
-    PM_NOREMOVE, WINDOW_EX_STYLE, WINDOW_STYLE, WM_HOTKEY, WM_QUIT, WS_EX_TOOLWINDOW,
+    CreateWindowExW, DestroyWindow, DispatchMessageW, GetMessageW, PeekMessageW, PostMessageW,
+    PostThreadMessageW, TranslateMessage, HMENU, MSG, PM_NOREMOVE, WINDOW_EX_STYLE, WINDOW_STYLE,
+    WM_HOTKEY, WM_QUIT, WS_EX_TOOLWINDOW,
 };
 
 #[cfg(target_os = "windows")]
@@ -89,7 +88,6 @@ pub fn setup_windows_hook(app: &AppHandle) {
         }
 
         HOTKEY_HWND.store(hwnd.0 as isize, Ordering::SeqCst);
-        eprintln!("[HOTKEY] Hidden HWND created: {:?}", hwnd);
 
         // Register Shift+Backspace hotkey
         let registered_shift = unsafe {
@@ -111,12 +109,8 @@ pub fn setup_windows_hook(app: &AppHandle) {
                 let _ = DestroyWindow(hwnd);
             }
             return;
-        } else {
-            eprintln!(
-                "[HOTKEY] RegisterHotKey succeeded for Shift+Backspace on HWND {:?}",
-                hwnd
-            );
         }
+
         // Register Ctrl+Backspace diagnostic hotkey
         let registered_ctrl = unsafe {
             RegisterHotKey(
@@ -133,11 +127,6 @@ pub fn setup_windows_hook(app: &AppHandle) {
                 "[HOTKEY] RegisterHotKey failed for Ctrl+Backspace: {} (GetLastError={})",
                 e, err
             );
-        } else {
-            eprintln!(
-                "[HOTKEY] RegisterHotKey succeeded for Ctrl+Backspace on HWND {:?}",
-                hwnd
-            );
         }
 
         let mut msg = MSG::default();
@@ -149,19 +138,14 @@ pub fn setup_windows_hook(app: &AppHandle) {
             if msg.message == WM_HOTKEY {
                 match msg.wParam.0 as i32 {
                     HOTKEY_ID_SHIFT_BACKSPACE => {
-                        eprintln!("[HOTKEY] WM_HOTKEY received (Shift+Backspace) on hidden HWND, about to toggle window");
                         if let Some(app) = GLOBAL_APP_HANDLE.get() {
                             let app_clone = app.clone();
                             tauri::async_runtime::spawn(async move {
-                                eprintln!(
-                                    "[HOTKEY] Spawning async task to call handle_toggle_window"
-                                );
                                 handle_toggle_window(&app_clone);
                             });
                         }
                     }
                     HOTKEY_ID_CTRL_BACKSPACE => {
-                        eprintln!("[HOTKEY] WM_HOTKEY received (Ctrl+Backspace) on hidden HWND, toggling window");
                         if let Some(app) = GLOBAL_APP_HANDLE.get() {
                             let app_clone = app.clone();
                             tauri::async_runtime::spawn(async move {
@@ -216,14 +200,9 @@ pub struct OverlayState {
 
 impl Default for OverlayState {
     fn default() -> Self {
-        let state = OverlayState {
+        OverlayState {
             user_hidden: Arc::new(AtomicBool::new(true)), // starts hidden
-        };
-        eprintln!(
-            "[STATE] OverlayState initialized with user_hidden={}",
-            state.user_hidden.load(std::sync::atomic::Ordering::SeqCst)
-        );
-        state
+        }
     }
 }
 
@@ -289,7 +268,6 @@ pub fn handle_shortcut_action<R: Runtime>(app: &AppHandle<R>, action_id: &str) {
 
 /// Handle app toggle (hide/show) with input focus and app icon management
 pub(crate) fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
-    eprintln!("[TOGGLE] handle_toggle_window() entered");
     // Get the main window
     let Some(window) = app.get_webview_window("main") else {
         eprintln!("[TOGGLE] Error: Could not get main window");
@@ -300,135 +278,39 @@ pub(crate) fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
     {
         let state = app.state::<OverlayState>();
         let user_hidden = state.user_hidden.load(Ordering::SeqCst);
-        let is_visible = window.is_visible().unwrap_or(false);
-        eprintln!(
-            "[TOGGLE] BEFORE: user_hidden={}, is_visible={}",
-            user_hidden, is_visible
-        );
+        let pos = window.outer_position();
+        let size = window.outer_size();
 
         if user_hidden {
             state.user_hidden.store(false, Ordering::SeqCst);
-            eprintln!(
-                "[TOGGLE] Setting user_hidden to false, now: {}",
-                state.user_hidden.load(Ordering::SeqCst)
-            );
-
-            // DEBUG: Log style/exstyle BEFORE show()
-            if let Ok(hwnd) = window.hwnd() {
-                let style_before =
-                    unsafe { GetWindowLongW(windows::Win32::Foundation::HWND(hwnd.0), GWL_STYLE) };
-                let ex_style_before = unsafe {
-                    GetWindowLongW(windows::Win32::Foundation::HWND(hwnd.0), GWL_EXSTYLE)
-                };
-                eprintln!(
-                    "[DEBUG] Style BEFORE show(): 0x{:X}, ExStyle BEFORE show(): 0x{:X}",
-                    style_before, ex_style_before
-                );
-            }
-
             let show_res = window.show();
-            let is_visible_after_show = window.is_visible().unwrap_or(false);
-            eprintln!(
-                "[TOGGLE] Called window.show(), result: {:?}, is_visible after: {}",
-                show_res, is_visible_after_show
-            );
+            let is_visible = window.is_visible().unwrap_or(false);
 
-            // DEBUG: Check window position and size
-            let pos = window.outer_position();
-            let size = window.outer_size();
-            eprintln!("[DEBUG] Position: {:?}, Size: {:?}", pos, size);
-
-            // DEBUG: Check monitor information
-            let monitors = window.available_monitors();
-            eprintln!("[DEBUG] Available monitors: {:?}", monitors);
-            let current_monitor = window.current_monitor();
-            eprintln!("[DEBUG] Current monitor: {:?}", current_monitor);
-
-            // DEBUG: Check Win32 window styles
-            if let Ok(hwnd) = window.hwnd() {
-                let style =
-                    unsafe { GetWindowLongW(windows::Win32::Foundation::HWND(hwnd.0), GWL_STYLE) };
-                let ex_style = unsafe {
-                    GetWindowLongW(windows::Win32::Foundation::HWND(hwnd.0), GWL_EXSTYLE)
-                };
-                eprintln!("[DEBUG] Style: 0x{:X}, ExStyle: 0x{:X}", style, ex_style);
-
-                // DEBUG: Check if window is layered and get alpha
-                if ex_style & 0x80000 != 0 {
-                    use windows::Win32::UI::WindowsAndMessaging::LAYERED_WINDOW_ATTRIBUTES_FLAGS;
-                    let mut alpha: u8 = 0;
-                    let mut flags: LAYERED_WINDOW_ATTRIBUTES_FLAGS =
-                        LAYERED_WINDOW_ATTRIBUTES_FLAGS::default();
-                    let result = unsafe {
-                        GetLayeredWindowAttributes(
-                            windows::Win32::Foundation::HWND(hwnd.0),
-                            None,
-                            Some(&mut alpha),
-                            Some(&mut flags),
-                        )
-                    };
-                    eprintln!("[DEBUG] Layered window - GetLayeredWindowAttributes result: {:?}, alpha: {}, flags: {:?}", result, alpha, flags);
-                }
-
-                // DEBUG: Check z-order
-                let prev_hwnd =
-                    unsafe { GetWindow(windows::Win32::Foundation::HWND(hwnd.0), GW_HWNDPREV) };
-                eprintln!("[DEBUG] Window above in z-order: HWND({:?})", prev_hwnd);
-
-                // DEBUG: Identify the covering window
-                if let Ok(prev) = prev_hwnd {
-                    if !prev.is_invalid() {
-                        let mut title = [0u16; 256];
-                        let mut class = [0u16; 256];
-                        let title_len = unsafe { GetWindowTextW(prev, &mut title) };
-                        let class_len = unsafe { GetClassNameW(prev, &mut class) };
-                        eprintln!(
-                            "[DEBUG] Covering window title: {:?}, class: {:?}",
-                            String::from_utf16_lossy(&title[..title_len as usize]),
-                            String::from_utf16_lossy(&class[..class_len as usize])
-                        );
-                    } else {
-                        eprintln!("[DEBUG] No window above ours (we're at the very top)");
-                    }
+            if let Err(e) = show_res {
+                eprintln!("[TOGGLE] hide->show | Failed to show window: {}", e);
+            } else {
+                // Bring window to front by re-asserting always-on-top
+                let _ = window.set_always_on_top(true);
+                if let (Ok(pos), Ok(size)) = (pos, size) {
+                    eprintln!(
+                        "[TOGGLE] hide->show | visible={} | pos=({},{}) size={}x{}",
+                        is_visible, pos.x, pos.y, size.width, size.height
+                    );
+                } else {
+                    eprintln!("[TOGGLE] hide->show | visible={}", is_visible);
                 }
             }
-
-            // Bring window to front by re-asserting always-on-top
-            let aot_res = window.set_always_on_top(true);
-            let is_visible_after_aot = window.is_visible().unwrap_or(false);
-            eprintln!(
-                "[TOGGLE] Called set_always_on_top(true), result: {:?}, is_visible after: {}",
-                aot_res, is_visible_after_aot
-            );
-
-            // DO NOT call set_focus() - let user keep focus on their current app
-            // DO NOT emit focus-text-input - only focus when user clicks on Hey Frank
         } else {
-            eprintln!("[TOGGLE] Window is visible, attempting to hide it");
             state.user_hidden.store(true, Ordering::SeqCst);
-            eprintln!(
-                "[TOGGLE] Set user_hidden to true, now: {}",
-                state.user_hidden.load(Ordering::SeqCst)
-            );
-
             let hide_res = window.hide();
-            let is_visible_after_hide = window.is_visible().unwrap_or(false);
-            eprintln!(
-                "[TOGGLE] Called window.hide(), result: {:?}, is_visible after: {}",
-                hide_res, is_visible_after_hide
-            );
+            let is_visible = window.is_visible().unwrap_or(false);
 
             if let Err(e) = hide_res {
-                eprintln!("[TOGGLE] Failed to hide window: {}", e);
+                eprintln!("[TOGGLE] show->hide | Failed to hide window: {}", e);
+            } else {
+                eprintln!("[TOGGLE] show->hide | visible={}", is_visible);
             }
         }
-
-        let final_is_visible = window.is_visible().unwrap_or(false);
-        let final_user_hidden = state.user_hidden.load(Ordering::SeqCst);
-        eprintln!(
-            "[TOGGLE] AFTER: user_hidden={}, is_visible={}",
-            final_user_hidden, final_is_visible
-        );
 
         if let Err(e) = window.emit("toggle-window-visibility", ()) {
             eprintln!("Failed to emit toggle-window-visibility event: {}", e);

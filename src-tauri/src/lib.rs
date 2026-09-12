@@ -18,35 +18,16 @@ use windows::Win32::Foundation::GetLastError;
 use windows::Win32::Foundation::HWND;
 #[cfg(target_os = "windows")]
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindowLongPtrW, GetWindowLongW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, GWL_STYLE,
-    HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, WS_EX_TOOLWINDOW,
+    GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, HWND_TOPMOST, SWP_NOMOVE,
+    SWP_NOSIZE, SWP_SHOWWINDOW, WS_EX_TOOLWINDOW,
 };
 
 #[cfg(target_os = "windows")]
 fn apply_overlay_style(hwnd: HWND) {
     unsafe {
-        eprintln!(
-            "[OVERLAY] apply_overlay_style() called with HWND: {:?}",
-            hwnd
-        );
-
         let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-        eprintln!(
-            "[OVERLAY] BEFORE SetWindowLongPtrW: ExStyle = 0x{:X}",
-            ex_style
-        );
-
         let new_style = ex_style | WS_EX_TOOLWINDOW.0 as isize;
-        eprintln!(
-            "[OVERLAY] Setting ExStyle to: 0x{:X} (adding WS_EX_TOOLWINDOW)",
-            new_style
-        );
-
         let result = SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_style);
-        eprintln!(
-            "[OVERLAY] SetWindowLongPtrW result: 0x{:X} (previous value)",
-            result
-        );
 
         if result == 0 {
             let error = GetLastError();
@@ -55,13 +36,6 @@ fn apply_overlay_style(hwnd: HWND) {
                 error
             );
         }
-
-        // Verify the change took effect
-        let actual_ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-        eprintln!(
-            "[OVERLAY] AFTER SetWindowLongPtrW: Actual ExStyle = 0x{:X}",
-            actual_ex_style
-        );
 
         // Do not set LWA_ALPHA here. A layered-window alpha of 0 hides the whole HWND,
         // including its WebView content. Tauri/WebView2 already provides per-pixel
@@ -78,8 +52,6 @@ fn apply_overlay_style(hwnd: HWND) {
             0,
             SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
         );
-
-        eprintln!("[OVERLAY] Applied WS_EX_TOOLWINDOW + HWND_TOPMOST");
     }
 }
 
@@ -193,21 +165,9 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             {
                 if let Some(main_window) = app.get_webview_window("main") {
-                    let initial_is_visible = main_window.is_visible().unwrap_or(false);
-                    println!("[SETUP] Main window found, initial is_visible={}", initial_is_visible);
-
                     // Apply Win32 overlay styles (WS_EX_TOOLWINDOW only, removed WS_EX_NOACTIVATE)
                     if let Ok(hwnd) = main_window.hwnd() {
-                        let h = windows::Win32::Foundation::HWND(hwnd.0);
-
-                        // DEBUG: Log style/exstyle at startup
-                        let startup_style = unsafe { GetWindowLongW(h, GWL_STYLE) };
-                        let startup_ex_style = unsafe { GetWindowLongW(h, GWL_EXSTYLE) };
-                        println!("[STARTUP DEBUG] Style: 0x{:X}, ExStyle: 0x{:X}", startup_style, startup_ex_style);
-
-                        println!("[SETUP] About to call apply_overlay_style() at startup");
-                        apply_overlay_style(h);
-                        println!("Applied Win32 overlay styles (WS_EX_TOOLWINDOW + HWND_TOPMOST)");
+                        apply_overlay_style(windows::Win32::Foundation::HWND(hwnd.0));
                     }
 
                     // Safety net: re-show window on focus loss if user didn't hide it
@@ -217,30 +177,23 @@ pub fn run() {
 
                     main_window.on_window_event(move |event| {
                         if let tauri::WindowEvent::Focused(false) = event {
-                            let current_user_hidden = user_hidden.load(std::sync::atomic::Ordering::SeqCst);
-                            let current_is_visible = window_for_handler.is_visible().unwrap_or(false);
-                            println!("[FOCUS LOST] Event fired. user_hidden={}, is_visible={}", current_user_hidden, current_is_visible);
+                            let current_user_hidden =
+                                user_hidden.load(std::sync::atomic::Ordering::SeqCst);
 
                             // Only re-show if user didn't explicitly hide it
                             if !current_user_hidden {
-                                println!("[AUTO-RESTORE] User didn't hide window, re-showing and re-applying overlay styles");
                                 let show_res = window_for_handler.show();
-                                let is_visible_after_show = window_for_handler.is_visible().unwrap_or(false);
-                                println!("[AUTO-RESTORE] Called show(), result: {:?}, is_visible after: {}", show_res, is_visible_after_show);
-
-                                // Re-apply overlay styles
-                                if let Ok(hwnd) = window_for_handler.hwnd() {
-                                    println!("[AUTO-RESTORE] About to call apply_overlay_style() in focus handler");
-                                    apply_overlay_style(HWND(hwnd.0));
-                                    println!("[AUTO-RESTORE] Re-applied overlay styles");
+                                if let Err(e) = show_res {
+                                    eprintln!("[AUTO-RESTORE] Failed to show window: {}", e);
+                                } else {
+                                    // Re-apply overlay styles
+                                    if let Ok(hwnd) = window_for_handler.hwnd() {
+                                        apply_overlay_style(HWND(hwnd.0));
+                                    }
                                 }
-                            } else {
-                                println!("[FOCUS LOST] User hid window (user_hidden=true), NOT restoring");
                             }
                         }
                     });
-
-                    println!("Configured window for persistent visibility");
                 }
             }
 
@@ -250,26 +203,19 @@ pub fn run() {
             // Listen for hide-window-clicked event from frontend
             let app_handle_for_event = app.handle().clone();
             app.listen("hide-window-clicked", move |_event| {
-                println!("[X BUTTON] Hide window clicked from frontend");
                 if let Some(window) = app_handle_for_event.get_webview_window("main") {
                     let state = app_handle_for_event.state::<shortcuts::OverlayState>();
-                    let before_user_hidden = state.user_hidden.load(std::sync::atomic::Ordering::SeqCst);
-                    let before_is_visible = window.is_visible().unwrap_or(false);
-                    println!("[X BUTTON] BEFORE: user_hidden={}, is_visible={}", before_user_hidden, before_is_visible);
-
                     state
                         .user_hidden
                         .store(true, std::sync::atomic::Ordering::SeqCst);
-                    println!("[X BUTTON] Set user_hidden to true");
 
                     let hide_res = window.hide();
-                    let after_is_visible = window.is_visible().unwrap_or(false);
-                    println!("[X BUTTON] Called hide(), result: {:?}, is_visible after: {}", hide_res, after_is_visible);
+                    let is_visible = window.is_visible().unwrap_or(false);
 
                     if let Err(e) = hide_res {
                         eprintln!("[X BUTTON] Failed to hide window: {}", e);
                     } else {
-                        println!("[X BUTTON] Window hidden successfully");
+                        eprintln!("[X BUTTON] show->hide | visible={}", is_visible);
                     }
                 }
             });
