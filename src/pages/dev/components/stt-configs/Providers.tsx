@@ -1,4 +1,5 @@
-import { Button, Header, Input, Selection, TextInput } from "@/components";
+import { Button, Header, Selection, TextInput } from "@/components";
+import { ApiKeyInput } from "@/components/ui/api-key-input";
 import { UseSettingsReturn } from "@/types";
 import curl2Json, { ResultJSON } from "@bany/curl-to-json";
 import { KeyIcon, TrashIcon } from "lucide-react";
@@ -90,9 +91,7 @@ export const Providers = ({
 
           <div className="space-y-2">
             <div className="flex gap-2">
-              <Input
-                type="password"
-                placeholder="**********"
+              <ApiKeyInput
                 value={getApiKeyValue()}
                 onChange={(value) => {
                   const apiKeyVar = findKeyAndValue("api_key");
@@ -102,25 +101,11 @@ export const Providers = ({
                     ...selectedSttProvider,
                     variables: {
                       ...selectedSttProvider.variables,
-                      [apiKeyVar.key]:
-                        typeof value === "string" ? value : value.target.value,
+                      [apiKeyVar.key]: value,
                     },
                   });
                 }}
-                onKeyDown={(e) => {
-                  const apiKeyVar = findKeyAndValue("api_key");
-                  if (!apiKeyVar || !selectedSttProvider) return;
-
-                  onSetSelectedSttProvider({
-                    ...selectedSttProvider,
-                    variables: {
-                      ...selectedSttProvider.variables,
-                      [apiKeyVar.key]: (e.target as HTMLInputElement).value,
-                    },
-                  });
-                }}
-                disabled={false}
-                className="flex-1 h-11 border-1 border-input/50 focus:border-primary/50 transition-colors"
+                className="h-11 border-1 border-input/50 focus:border-primary/50 transition-colors"
               />
               {isApiKeyEmpty() ? (
                 <Button

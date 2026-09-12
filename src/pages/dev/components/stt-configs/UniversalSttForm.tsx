@@ -13,26 +13,30 @@ export const UniversalSttForm = ({
 }: UseSettingsReturn) => {
   const apiKey = selectedSttProvider.variables.api_key || "";
 
+  // Ensure the provider is set to Gemini, but don't reset the API key
   useEffect(() => {
+    // Only reset if provider or model is wrong, but preserve the existing API key
     if (
       selectedSttProvider.provider === GEMINI_TRANSCRIBE_PROVIDER_ID &&
       selectedSttProvider.variables.model === GEMINI_TRANSCRIBE_MODEL
     ) {
-      return;
+      return; // Already correctly configured
     }
 
+    console.log("[UniversalSttForm] Migrating to Gemini provider, preserving API key");
     onSetSelectedSttProvider({
       provider: GEMINI_TRANSCRIBE_PROVIDER_ID,
       variables: {
-        api_key: apiKey,
+        api_key: selectedSttProvider.variables.api_key || "", // Preserve existing API key
         model: GEMINI_TRANSCRIBE_MODEL,
       },
     });
   }, [
-    apiKey,
+    // Removed apiKey from dependencies to prevent infinite loop
     onSetSelectedSttProvider,
     selectedSttProvider.provider,
     selectedSttProvider.variables.model,
+    selectedSttProvider.variables.api_key, // Only depend on the actual stored value
   ]);
 
   return (
