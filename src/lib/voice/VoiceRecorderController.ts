@@ -70,7 +70,12 @@ export class VoiceRecorderController {
   private releaseEngine() {
     if (this.engine) {
       console.log("[VoiceController] Releasing engine and stopping tracks");
-      this.engine.releaseTracks();
+      try {
+        this.engine.releaseTracks();
+        console.log("[VoiceController] Engine tracks released successfully");
+      } catch (error) {
+        console.error("[VoiceController] Error releasing engine tracks:", error);
+      }
       this.engine = null;
     }
   }
@@ -166,7 +171,14 @@ export class VoiceRecorderController {
 
     if (sessionId !== this.sessionId) {
       console.warn("[VoiceController] Session invalidated during permission request, stopping stream", { sessionId, currentSessionId: this.sessionId });
-      stream.getTracks().forEach((track) => track.stop());
+      try {
+        stream.getTracks().forEach((track) => {
+          console.log("[VoiceController] Stopping stream track after invalidation", { id: track.id, kind: track.kind });
+          track.stop();
+        });
+      } catch (error) {
+        console.error("[VoiceController] Error stopping invalidated stream tracks:", error);
+      }
       return false;
     }
 
@@ -283,8 +295,13 @@ export class VoiceRecorderController {
     this.publish(IDLE_SNAPSHOT);
     if (engine) {
       void engine.cancel().finally(() => {
-        console.log("[VoiceController] Engine canceled and tracks released");
-        engine.releaseTracks();
+        console.log("[VoiceController] Engine canceled, releasing tracks");
+        try {
+          engine.releaseTracks();
+          console.log("[VoiceController] Tracks released after cancel");
+        } catch (error) {
+          console.error("[VoiceController] Error releasing tracks after cancel:", error);
+        }
       });
     }
   }

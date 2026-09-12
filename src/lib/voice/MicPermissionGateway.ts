@@ -32,6 +32,18 @@ export class MicPermissionGateway {
         trackCount: stream.getTracks().length,
         tracks: stream.getTracks().map(t => ({ id: t.id, kind: t.kind, label: t.label, enabled: t.enabled, readyState: t.readyState }))
       });
+
+      // Verify stream is active
+      const activeTracks = stream.getTracks().filter(t => t.readyState === 'live' && t.enabled);
+      if (activeTracks.length === 0) {
+        console.error("[MicPermission] Stream obtained but no active tracks", {
+          allTracks: stream.getTracks().map(t => ({ id: t.id, kind: t.kind, readyState: t.readyState, enabled: t.enabled }))
+        });
+        // Stop all tracks before throwing
+        stream.getTracks().forEach(track => track.stop());
+        throw new DOMException("Microphone stream has no active tracks", "InvalidStateError");
+      }
+
       return stream;
     } catch (error) {
       console.error("[MicPermission] Failed to obtain microphone permission", { deviceId, error });

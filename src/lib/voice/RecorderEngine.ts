@@ -131,13 +131,34 @@ export class RecorderEngine implements IRecorderEngine {
   }
 
   releaseTracks() {
+    const tracks = this.stream.getTracks();
     console.log("[RecorderEngine] Releasing media stream tracks", {
-      trackCount: this.stream.getTracks().length,
-      tracks: this.stream.getTracks().map(t => ({ id: t.id, kind: t.kind, readyState: t.readyState }))
+      trackCount: tracks.length,
+      tracks: tracks.map(t => ({ id: t.id, kind: t.kind, readyState: t.readyState }))
     });
-    this.stream.getTracks().forEach((track) => {
-      console.log("[RecorderEngine] Stopping track", { id: track.id, kind: track.kind, readyState: track.readyState });
-      track.stop();
+    
+    tracks.forEach((track) => {
+      try {
+        if (track.readyState !== 'ended') {
+          console.log("[RecorderEngine] Stopping track", { id: track.id, kind: track.kind, readyState: track.readyState });
+          track.stop();
+          console.log("[RecorderEngine] Track stopped successfully", { id: track.id, newState: track.readyState });
+        } else {
+          console.log("[RecorderEngine] Track already ended", { id: track.id });
+        }
+      } catch (error) {
+        console.error("[RecorderEngine] Error stopping track", { id: track.id, error });
+      }
     });
+    
+    // Verify all tracks are stopped
+    const remainingActive = tracks.filter(t => t.readyState !== 'ended');
+    if (remainingActive.length > 0) {
+      console.warn("[RecorderEngine] Some tracks still active after cleanup", {
+        active: remainingActive.map(t => ({ id: t.id, kind: t.kind, readyState: t.readyState }))
+      });
+    } else {
+      console.log("[RecorderEngine] All tracks successfully released");
+    }
   }
 }
