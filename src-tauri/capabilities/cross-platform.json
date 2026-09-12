@@ -12,8 +12,6 @@
     "global-shortcut:allow-unregister",
     "shell:allow-open",
     "core:window:allow-start-dragging",
-    "core:webview:allow-webview-position",
-    "core:webview:allow-webview-size",
     "sql:default",
     "sql:allow-execute",
     "posthog:default",

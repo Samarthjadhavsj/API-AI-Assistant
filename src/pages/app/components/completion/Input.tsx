@@ -72,11 +72,7 @@ export const Input = ({
       } catch (error) {
         console.error("[VoiceInput] Failed to start voice recording:", error);
         setVoiceState("idle");
-        // Show error to user
-        const errorMessage = error instanceof Error ? error.message : "Failed to access microphone";
-        console.error("[VoiceInput] Microphone error:", errorMessage);
-        // You could add a toast notification here
-        alert(`Microphone error: ${errorMessage}. Please check your microphone permissions and try again.`);
+        // Optionally show a toast/error to the user here
       }
     } else {
       console.log("[VoiceInput] Canceling voice recording...");
@@ -144,29 +140,6 @@ export const Input = ({
   useEffect(() => {
     onVoiceStateChange?.(voiceState);
   }, [voiceState, onVoiceStateChange]);
-
-  // Cleanup on component unmount
-  useEffect(() => {
-    return () => {
-      console.log("[VoiceInput] Input component unmounting, cleaning up voice resources");
-      if (voiceState !== "idle") {
-        console.log("[VoiceInput] Active voice session on unmount, canceling");
-        voice.cancel();
-      }
-      if (voiceStream) {
-        console.log("[VoiceInput] Cleaning up voice stream on unmount");
-        voiceStream.getTracks().forEach(track => {
-          try {
-            if (track.readyState !== 'ended') {
-              track.stop();
-            }
-          } catch (error) {
-            console.error("[VoiceInput] Error stopping track on unmount:", error);
-          }
-        });
-      }
-    };
-  }, [voiceState, voiceStream, voice]);
 
   return (
     <div className="relative flex-1">

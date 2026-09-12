@@ -48,7 +48,6 @@ export function VoiceInputBar({
   const analyserRef = useRef<AnalyserNode | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const animationTimeRef = useRef<number>(0);
-  const streamRef = useRef<MediaStream | null>(null);
 
   // Web Audio API setup for real-time audio analysis
   useEffect(() => {
@@ -57,9 +56,6 @@ export function VoiceInputBar({
       return;
     }
 
-    // Update stream ref
-    streamRef.current = stream;
-
     const setupAudio = async () => {
       try {
         console.log("[VoiceInputBar] Setting up audio analysis", {
@@ -67,15 +63,6 @@ export function VoiceInputBar({
           trackCount: stream.getTracks().length,
           tracks: stream.getTracks().map(t => ({ id: t.id, kind: t.kind, readyState: t.readyState }))
         });
-
-        // Verify stream is active before proceeding
-        const activeTracks = stream.getTracks().filter(t => t.readyState === 'live' && t.enabled);
-        if (activeTracks.length === 0) {
-          console.error("[VoiceInputBar] No active tracks in stream", {
-            allTracks: stream.getTracks().map(t => ({ id: t.id, kind: t.kind, readyState: t.readyState, enabled: t.enabled }))
-          });
-          return;
-        }
 
         const audioContext = new AudioContext();
         audioContextRef.current = audioContext;
@@ -96,8 +83,7 @@ export function VoiceInputBar({
         console.log("[VoiceInputBar] Audio analysis setup complete", {
           contextState: audioContext.state,
           fftSize: analyser.fftSize,
-          sampleRate: audioContext.sampleRate,
-          activeTracks: activeTracks.length
+          sampleRate: audioContext.sampleRate
         });
 
         startAudioAnalysis();
@@ -133,32 +119,6 @@ export function VoiceInputBar({
 
     audioContextRef.current = null;
     analyserRef.current = null;
-  };
-
-  const cleanupStream = () => {
-    const targetStream = streamRef.current;
-    if (targetStream) {
-      console.log("[VoiceInputBar] Cleaning up media stream tracks", {
-        trackCount: targetStream.getTracks().length,
-        tracks: targetStream.getTracks().map(t => ({ id: t.id, kind: t.kind, readyState: t.readyState }))
-      });
-
-      targetStream.getTracks().forEach((track) => {
-        try {
-          if (track.readyState !== 'ended') {
-            console.log("[VoiceInputBar] Stopping track", { id: track.id, kind: track.kind, readyState: track.readyState });
-            track.stop();
-            console.log("[VoiceInputBar] Track stopped successfully", { id: track.id, newState: track.readyState });
-          } else {
-            console.log("[VoiceInputBar] Track already ended", { id: track.id });
-          }
-        } catch (error) {
-          console.error("[VoiceInputBar] Error stopping track", { id: track.id, error });
-        }
-      });
-
-      streamRef.current = null;
-    }
   };
 
   const startAudioAnalysis = () => {
@@ -218,28 +178,6 @@ export function VoiceInputBar({
     }
     // Don't reset when listening - let the audio analysis handle it
   }, [state]);
-
-  // Component unmount cleanup
-  useEffect(() => {
-    return () => {
-      console.log("[VoiceInputBar] Component unmounting, performing final cleanup");
-      cleanupAudio();
-      // Clean up any lingering stream from ref
-      if (streamRef.current) {
-        console.log("[VoiceInputBar] Cleaning up lingering stream on unmount");
-        streamRef.current.getTracks().forEach(track => {
-          try {
-            if (track.readyState !== 'ended') {
-              track.stop();
-            }
-          } catch (error) {
-            console.error("[VoiceInputBar] Error stopping lingering track:", error);
-          }
-        });
-        streamRef.current = null;
-      }
-    };
-  }, []);
 
   const renderIdleState = () => (
     <>
