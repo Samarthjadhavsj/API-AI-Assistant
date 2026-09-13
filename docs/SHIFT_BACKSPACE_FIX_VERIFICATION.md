@@ -63,3 +63,9 @@
 
 ## Note for future debugging
 If this bug recurs, check tauri.conf.json's decorations/transparent/contentProtected values FIRST before assuming it's a Rust-side logic bug — this cost significant time because the Rust toggle logic was actually correct the whole time.
+
+## Verified again on feature/mic-transcription (2026-09-13)
+- Confirmed shortcuts.rs already contains the correct hidden-window RegisterHotKey implementation (CreateWindowExW class "STATIC", valid HWND passed to RegisterHotKey, HOTKEY_HWND stored for cleanup) — last touched in commit 62ea143e355855506b168eb775093cd74974876e.
+- An earlier stashed/intermediate version of the mic-transcription work had a regression where RegisterHotKey was called with a null HWND, causing silent hotkey-registration failure (Shift+Backspace did nothing). That version was never part of this branch's actual commit history — it only existed in a stash.
+- If this symptom recurs (hotkey does nothing, no window response at all): check RegisterHotKey's HWND argument first — must be non-null and valid.
+- If instead the symptom is "window reports visible but doesn't render" (different symptom): see the main sections above regarding tauri.conf.json config drift.
