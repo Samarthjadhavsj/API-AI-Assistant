@@ -205,7 +205,7 @@ export const Input = ({
               />
             )}
             {!isLoading && voiceState !== "idle" && (
-              <div className="w-8 shrink-0" />
+              <div className="w-9 shrink-0" />
             )}
           </div>
         </PopoverTrigger>

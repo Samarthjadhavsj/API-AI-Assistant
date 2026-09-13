@@ -120,23 +120,33 @@ export const MessageHistory = ({
     return allConversations.filter(conv => conv.id !== currentConversationId);
   }, [allConversations, currentConversationId]);
 
-  return (
-    <Popover open={messageHistoryOpen} onOpenChange={setMessageHistoryOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          size="icon"
-          variant="outline"
-          aria-label="View Conversations"
-          className="relative cursor-pointer w-12 h-7 px-2 flex gap-1 items-center justify-center"
-        >
-          <div className="flex items-center justify-center text-xs font-medium">
-            {isInActiveConversation ? conversationHistory.length : allConversations.length}
-          </div>
-          <MessageSquareText className="h-5 w-5" />
-        </Button>
-      </PopoverTrigger>
+  const conversationCount = isInActiveConversation
+    ? conversationHistory.length
+    : allConversations.length;
 
-      <TransparentPopoverContent
+  return (
+    <div className="relative">
+      <Popover open={messageHistoryOpen} onOpenChange={setMessageHistoryOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            size="icon"
+            className="cursor-pointer"
+            aria-label="View Conversations"
+            title="View Conversations"
+            data-tauri-drag-region={false}
+          >
+            <MessageSquareText className="h-4 w-4" />
+          </Button>
+        </PopoverTrigger>
+
+        {/* Conversation count badge */}
+        {conversationCount > 0 && (
+          <div className="absolute -top-2 -right-2 bg-primary-foreground text-primary rounded-full h-5 w-5 flex border border-primary items-center justify-center text-xs font-medium pointer-events-none">
+            {conversationCount}
+          </div>
+        )}
+
+        <TransparentPopoverContent
         align="end"
         side="bottom"
         className="select-none w-screen p-0 mt-3 border overflow-hidden border-input/50"
@@ -329,5 +339,6 @@ export const MessageHistory = ({
         </ScrollArea>
       </TransparentPopoverContent>
     </Popover>
-  );
+  </div>
+);
 };

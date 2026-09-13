@@ -42,15 +42,15 @@ const App = () => {
       }}
     >
       <div
-        className="w-screen h-screen flex overflow-hidden justify-center items-start"
+        className="w-screen h-screen flex overflow-hidden justify-center items-center"
       >
-        <Card className="w-full flex flex-row items-center gap-2 py-2 px-3">
+        <Card className="w-full flex flex-row items-center gap-2 py-1 px-3">
           {/* App Icon on the left */}
           <div className="shrink-0" data-tauri-drag-region={false}>
             <img 
               src="/icon.png" 
               alt="Hey Frank" 
-              className="h-7 w-7 rounded-md object-contain"
+              className="h-9 w-9 rounded-md object-contain"
               draggable={false}
             />
           </div>
