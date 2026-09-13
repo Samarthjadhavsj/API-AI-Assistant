@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Plus, Mic, X, Check } from "lucide-react";
+import { Mic, X, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type VoiceInputState = "idle" | "listening" | "active";
@@ -232,16 +232,7 @@ export function VoiceInputBar({
   const renderIdleState = () => (
     <>
       {/* Left side */}
-      <div className="flex items-center gap-2 flex-1 min-w-0">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            // Plus button functionality could be added here
-          }}
-          className="text-gray-400 hover:text-white transition-colors flex-shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-        </button>
+      <div className="flex items-center flex-1 min-w-0">
         <input
           ref={inputRef as React.RefObject<HTMLInputElement>}
           placeholder="Write a message…"
@@ -250,7 +241,7 @@ export function VoiceInputBar({
           onKeyPress={onKeyPress}
           onPaste={onPaste}
           disabled={disabled}
-          className="flex-1 min-w-0 border-none bg-transparent p-0 h-5 text-sm text-gray-400 placeholder:text-gray-400 focus:outline-none focus:ring-0"
+          className="flex-1 min-w-0 border-none bg-transparent p-0 h-5 text-sm text-white placeholder:text-white focus:outline-none focus:ring-0"
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"
@@ -262,7 +253,7 @@ export function VoiceInputBar({
       <div className="flex items-center gap-2 flex-shrink-0">
         <button
           onClick={onMicClick}
-          className="text-gray-400 hover:text-white transition-colors"
+          className="text-white hover:text-white transition-colors"
         >
           <Mic className="w-4 h-4" />
         </button>
@@ -273,16 +264,7 @@ export function VoiceInputBar({
   const renderListeningState = () => (
     <>
       {/* Left side */}
-      <div className="flex items-center gap-2">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            // Plus button functionality could be added here
-          }}
-          className="text-gray-400 hover:text-white transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-        </button>
+      <div className="flex items-center flex-1 min-w-0">
         <span className="text-gray-400 text-sm italic h-5 flex items-center">Listening…</span>
       </div>
 
@@ -337,16 +319,7 @@ export function VoiceInputBar({
   const renderActiveState = () => (
     <>
       {/* Left side with transcript */}
-      <div className="flex items-center gap-2 flex-1 min-w-0">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            // Plus button functionality could be added here
-          }}
-          className="text-gray-400 hover:text-white transition-colors flex-shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-        </button>
+      <div className="flex items-center flex-1 min-w-0">
         <span className="text-gray-400 text-sm italic truncate h-5 flex items-center">
           {transcript || "Hey,"}
         </span>
@@ -422,8 +395,8 @@ export function VoiceInputBar({
       `}</style>
       <div
         className={cn(
-          "flex items-center justify-between px-4 py-2 rounded-xl",
-          "bg-[#2a2a2a] border border-[#3a3a3a]",
+          "flex items-center justify-between px-5 py-2 rounded-2xl",
+          "bg-[#1f1f1f] border border-[#363636]",
           "transition-all duration-200",
           "min-w-0",
           "max-w-full",
