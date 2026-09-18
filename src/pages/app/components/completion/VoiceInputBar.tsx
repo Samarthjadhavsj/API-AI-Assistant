@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Mic, X, Check, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { setNativeWindowHeight } from "@/hooks/useWindow";
 
 export type VoiceUiState = "idle" | "listening" | "processing" | "error";
 export type VoiceInputState = "idle" | "listening" | "active" | "processing" | "error";
@@ -29,8 +30,19 @@ const ANIMATION_CONFIG = {
   DOT_COUNT: 15,
   AMPLITUDE_THRESHOLD: 2,
 } as const;
-const MAX_TEXTAREA_HEIGHT = 160;
-const MIN_TEXTAREA_HEIGHT = 20;
+export const MAX_TEXTAREA_HEIGHT = 160;
+export const MIN_TEXTAREA_HEIGHT = 20;
+export const BASE_WINDOW_HEIGHT = 54;
+export const MAX_VOICE_WINDOW_HEIGHT =
+  BASE_WINDOW_HEIGHT + (MAX_TEXTAREA_HEIGHT - MIN_TEXTAREA_HEIGHT); // 194
+
+export function calculateVoiceWindowHeight(textareaHeight: number): number {
+  const clampedHeight = Math.max(
+    MIN_TEXTAREA_HEIGHT,
+    Math.min(textareaHeight, MAX_TEXTAREA_HEIGHT)
+  );
+  return BASE_WINDOW_HEIGHT + (clampedHeight - MIN_TEXTAREA_HEIGHT);
+}
 
 export function VoiceInputBar({
   state,
@@ -90,14 +102,28 @@ export function VoiceInputBar({
     const textarea = textareaRef.current;
     if (!textarea) return;
 
-    textarea.style.height = "auto";
-    const height = Math.max(
-      MIN_TEXTAREA_HEIGHT,
-      Math.min(textarea.scrollHeight, MAX_TEXTAREA_HEIGHT)
-    );
-    textarea.style.height = `${height}px`;
-    textarea.style.overflowY = textarea.scrollHeight > MAX_TEXTAREA_HEIGHT ? "auto" : "hidden";
-  }, [displayValue]);
+    if (activeUiState === "listening") {
+      textarea.style.height = "auto";
+      const height = Math.max(
+        MIN_TEXTAREA_HEIGHT,
+        Math.min(textarea.scrollHeight, MAX_TEXTAREA_HEIGHT)
+      );
+      textarea.style.height = `${height}px`;
+      textarea.style.overflowY = textarea.scrollHeight > MAX_TEXTAREA_HEIGHT ? "auto" : "hidden";
+      const targetWindowHeight = calculateVoiceWindowHeight(height);
+      setNativeWindowHeight(targetWindowHeight);
+    } else {
+      textarea.style.height = `${MIN_TEXTAREA_HEIGHT}px`;
+      textarea.style.overflowY = "hidden";
+      setNativeWindowHeight(BASE_WINDOW_HEIGHT);
+    }
+  }, [displayValue, activeUiState]);
+
+  useEffect(() => {
+    return () => {
+      setNativeWindowHeight(BASE_WINDOW_HEIGHT);
+    };
+  }, []);
 
   const cleanupAudio = () => {
     if (animationRef.current) {
@@ -269,53 +295,55 @@ export function VoiceInputBar({
     <>
       {renderTextarea()}
 
-      <div className="flex items-center flex-shrink-0 h-5" data-testid="audio-visualization">
-        <div className="flex items-center justify-center gap-[2px] overflow-hidden h-5 relative w-12">
-          {dotHeights.map((height, i) => (
-            <div
-              key={i}
-              className="absolute bg-neutral-300"
-              style={{
-                width: "2px",
-                height: `${height}px`,
-                borderRadius: height > 4 ? "1px" : "50%",
-                animation: `flowRightToLeft 5s linear infinite`,
-                animationDelay: `${-i * 0.33}s`,
-                left: "50%",
-              }}
-            />
-          ))}
+      <div className="flex items-center gap-2 flex-shrink-0 self-center">
+        <div className="flex items-center flex-shrink-0 h-5" data-testid="audio-visualization">
+          <div className="flex items-center justify-center gap-[2px] overflow-hidden h-5 relative w-12">
+            {dotHeights.map((height, i) => (
+              <div
+                key={i}
+                className="absolute bg-neutral-300"
+                style={{
+                  width: "2px",
+                  height: `${height}px`,
+                  borderRadius: height > 4 ? "1px" : "50%",
+                  animation: `flowRightToLeft 5s linear infinite`,
+                  animationDelay: `${-i * 0.33}s`,
+                  left: "50%",
+                }}
+              />
+            ))}
+          </div>
         </div>
-      </div>
 
-      {/* Controls: Cancel (✕) and Finish (✓) */}
-      <div className="flex items-center gap-1.5 flex-shrink-0" style={{ pointerEvents: "auto" }}>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onCancel();
-          }}
-          className="w-7 h-7 rounded-md flex items-center justify-center bg-white/10 hover:bg-white/20 text-neutral-300 hover:text-white transition-colors cursor-pointer"
-          title="Cancel"
-          aria-label="Cancel"
-        >
-          <X className="w-4 h-4 pointer-events-none" />
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onConfirm();
-          }}
-          className="w-7 h-7 rounded-md flex items-center justify-center bg-white/10 hover:bg-white/20 text-neutral-300 hover:text-white transition-colors cursor-pointer"
-          title="Finish"
-          aria-label="Finish"
-        >
-          <Check className="w-4 h-4 pointer-events-none" />
-        </button>
+        {/* Controls: Cancel (✕) and Finish (✓) */}
+        <div className="flex items-center gap-1.5 flex-shrink-0" style={{ pointerEvents: "auto" }}>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onCancel();
+            }}
+            className="w-7 h-7 rounded-md flex items-center justify-center bg-white/10 hover:bg-white/20 text-neutral-300 hover:text-white transition-colors cursor-pointer"
+            title="Cancel"
+            aria-label="Cancel"
+          >
+            <X className="w-4 h-4 pointer-events-none" />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onConfirm();
+            }}
+            className="w-7 h-7 rounded-md flex items-center justify-center bg-white/10 hover:bg-white/20 text-neutral-300 hover:text-white transition-colors cursor-pointer"
+            title="Finish"
+            aria-label="Finish"
+          >
+            <Check className="w-4 h-4 pointer-events-none" />
+          </button>
+        </div>
       </div>
     </>
   );
@@ -361,8 +389,9 @@ export function VoiceInputBar({
       `}</style>
       <div className={cn("relative", className)}>
         <div
+          data-voice-listening={activeUiState === "listening" ? "true" : undefined}
           className={cn(
-            "flex items-center justify-between px-5 py-2 rounded-2xl",
+            "flex items-center justify-between gap-3 px-5 py-2 rounded-2xl",
             "bg-[#1f1f1f] border border-[#363636]",
             "transition-all duration-200",
             "min-w-0",

@@ -230,6 +230,185 @@ describe("GeminiLiveSttAdapter", () => {
     });
   });
 
+  describe("live transcript accumulation", () => {
+    function audioArtifact() {
+      const mockBlob = new Blob(["test audio"]) as Blob & { arrayBuffer: () => Promise<ArrayBuffer> };
+      mockBlob.arrayBuffer = () => Promise.resolve(new ArrayBuffer(100));
+      return { blob: mockBlob, mimeType: "audio/webm", durationMs: 1000, sizeBytes: 100, deviceId: null, chunkCount: 1 };
+    }
+
+    function getLatestSocket(): MockWebSocket {
+      const socket = MockWebSocket.instances[MockWebSocket.instances.length - 1];
+      if (!socket) {
+        throw new Error("No MockWebSocket instance found");
+      }
+      return socket;
+    }
+
+    function sendInterim(text: string) {
+      getLatestSocket().simulateMessage(JSON.stringify({
+        serverContent: { interimInputTranscription: { text } },
+      }));
+    }
+
+    function sendFinal(text: string) {
+      getLatestSocket().simulateMessage(JSON.stringify({
+        serverContent: { inputTranscription: { text } },
+      }));
+    }
+
+    async function startTranscribe(onPartial?: (text: string) => void) {
+      const transcribePromise = adapter.transcribe(audioArtifact(), {
+        signal: new AbortController().signal,
+        onPartial,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return { transcribePromise };
+    }
+
+    it("Sentence 1 interim displays Sentence 1", async () => {
+      const onPartial = vi.fn();
+      const { transcribePromise } = await startTranscribe(onPartial);
+
+      sendInterim("Sentence 1");
+
+      expect(onPartial).toHaveBeenLastCalledWith("Sentence 1");
+      expect((adapter as any).currentTranscript).toBe("Sentence 1");
+
+      getLatestSocket().close();
+      await transcribePromise;
+    });
+
+    it("Sentence 1 final remains Sentence 1", async () => {
+      const onPartial = vi.fn();
+      const { transcribePromise } = await startTranscribe(onPartial);
+
+      sendInterim("Sentence 1");
+      sendFinal("Sentence 1");
+
+      expect(onPartial).toHaveBeenLastCalledWith("Sentence 1");
+      expect((adapter as any).committedTranscript).toBe("Sentence 1");
+      expect((adapter as any).interimTranscript).toBe("");
+
+      getLatestSocket().close();
+      const result = await transcribePromise;
+      expect(result.text).toBe("Sentence 1");
+    });
+
+    it("Sentence 2 interim displays Sentence 1 + Sentence 2", async () => {
+      const onPartial = vi.fn();
+      const { transcribePromise } = await startTranscribe(onPartial);
+
+      sendInterim("Sentence 1");
+      sendFinal("Sentence 1");
+      sendInterim("Sentence 2");
+
+      expect(onPartial).toHaveBeenLastCalledWith("Sentence 1 Sentence 2");
+      expect((adapter as any).currentTranscript).toBe("Sentence 1 Sentence 2");
+
+      getLatestSocket().close();
+      await transcribePromise;
+    });
+
+    it("Sentence 2 final remains both sentences", async () => {
+      const onPartial = vi.fn();
+      const { transcribePromise } = await startTranscribe(onPartial);
+
+      sendInterim("Sentence 1");
+      sendFinal("Sentence 1");
+      sendInterim("Sentence 2");
+      sendFinal("Sentence 2");
+
+      expect(onPartial).toHaveBeenLastCalledWith("Sentence 1 Sentence 2");
+      expect((adapter as any).committedTranscript).toBe("Sentence 1 Sentence 2");
+      expect((adapter as any).interimTranscript).toBe("");
+
+      getLatestSocket().close();
+      const result = await transcribePromise;
+      expect(result.text).toBe("Sentence 1 Sentence 2");
+    });
+
+    it("multiple finalized sentences accumulate", async () => {
+      const onPartial = vi.fn();
+      const { transcribePromise } = await startTranscribe(onPartial);
+
+      sendFinal("One");
+      sendFinal("Two");
+      sendFinal("Three");
+
+      expect(onPartial).toHaveBeenNthCalledWith(1, "One");
+      expect(onPartial).toHaveBeenNthCalledWith(2, "One Two");
+      expect(onPartial).toHaveBeenNthCalledWith(3, "One Two Three");
+      expect((adapter as any).currentTranscript).toBe("One Two Three");
+
+      getLatestSocket().close();
+      const result = await transcribePromise;
+      expect(result.text).toBe("One Two Three");
+    });
+
+    it("repeated interim updates replace only the current sentence", async () => {
+      const onPartial = vi.fn();
+      const { transcribePromise } = await startTranscribe(onPartial);
+
+      sendFinal("Sentence 1");
+      sendInterim("Hel");
+      sendInterim("Hello");
+      sendInterim("Hello there");
+
+      expect(onPartial).toHaveBeenNthCalledWith(1, "Sentence 1");
+      expect(onPartial).toHaveBeenNthCalledWith(2, "Sentence 1 Hel");
+      expect(onPartial).toHaveBeenNthCalledWith(3, "Sentence 1 Hello");
+      expect(onPartial).toHaveBeenLastCalledWith("Sentence 1 Hello there");
+      expect((adapter as any).committedTranscript).toBe("Sentence 1");
+      expect((adapter as any).interimTranscript).toBe("Hello there");
+
+      getLatestSocket().close();
+      await transcribePromise;
+    });
+
+    it("empty final transcript is ignored", async () => {
+      const onPartial = vi.fn();
+      const { transcribePromise } = await startTranscribe(onPartial);
+
+      sendFinal("Sentence 1");
+      sendFinal("   ");
+      sendFinal("");
+      sendInterim("Sentence 2");
+
+      expect(onPartial).toHaveBeenCalledTimes(2);
+      expect(onPartial).toHaveBeenNthCalledWith(1, "Sentence 1");
+      expect(onPartial).toHaveBeenLastCalledWith("Sentence 1 Sentence 2");
+      expect((adapter as any).committedTranscript).toBe("Sentence 1");
+      expect((adapter as any).hasFinalTranscript).toBe(true);
+
+      getLatestSocket().close();
+      const result = await transcribePromise;
+      expect(result.text).toBe("Sentence 1 Sentence 2");
+    });
+
+    it("a new transcribe session starts with an empty accumulated transcript", async () => {
+      const firstPartial = vi.fn();
+      const { transcribePromise: firstPromise } = await startTranscribe(firstPartial);
+      sendFinal("Previous session");
+      getLatestSocket().close();
+      await firstPromise;
+
+      const secondPartial = vi.fn();
+      const { transcribePromise: secondPromise } = await startTranscribe(secondPartial);
+      expect((adapter as any).committedTranscript).toBe("");
+      expect((adapter as any).interimTranscript).toBe("");
+      expect((adapter as any).currentTranscript).toBe("");
+
+      sendInterim("New session");
+      expect(secondPartial).toHaveBeenCalledTimes(1);
+      expect(secondPartial).toHaveBeenCalledWith("New session");
+      expect((adapter as any).currentTranscript).toBe("New session");
+
+      getLatestSocket().close();
+      await secondPromise;
+    });
+  });
+
   describe("final transcription", () => {
     it("returns final transcription result", async () => {
       const signal = new AbortController().signal;

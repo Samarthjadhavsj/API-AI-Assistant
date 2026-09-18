@@ -90,7 +90,11 @@ pub fn setup_windows_hook(app: &AppHandle) {
         HOTKEY_HWND.store(hwnd.0 as isize, Ordering::SeqCst);
 
         // Register Shift+Backspace hotkey
-        let registered_shift = unsafe {
+        const MAX_HOTKEY_RETRIES: u32 = 5;
+        const HOTKEY_RETRY_DELAY_MS: u64 = 200;
+        const ERROR_HOTKEY_ALREADY_REGISTERED: u32 = 1409;
+
+        let mut registered_shift = unsafe {
             RegisterHotKey(
                 hwnd,
                 HOTKEY_ID_SHIFT_BACKSPACE,
@@ -98,17 +102,48 @@ pub fn setup_windows_hook(app: &AppHandle) {
                 VK_BACK.0 as u32,
             )
         };
-        if let Err(e) = registered_shift {
+        if registered_shift.is_err() {
             use windows::Win32::Foundation::GetLastError;
-            let err = unsafe { GetLastError().0 };
-            eprintln!(
-                "[HOTKEY] RegisterHotKey failed for Shift+Backspace: {} (GetLastError={})",
-                e, err
-            );
-            unsafe {
-                let _ = DestroyWindow(hwnd);
+            let mut err = unsafe { GetLastError().0 };
+            if err == ERROR_HOTKEY_ALREADY_REGISTERED {
+                for attempt in 1..=MAX_HOTKEY_RETRIES {
+                    eprintln!(
+                        "[HOTKEY] RegisterHotKey failed for Shift+Backspace (error 1409, attempt {}/{}), retrying in {}ms...",
+                        attempt, MAX_HOTKEY_RETRIES, HOTKEY_RETRY_DELAY_MS
+                    );
+                    std::thread::sleep(std::time::Duration::from_millis(HOTKEY_RETRY_DELAY_MS));
+                    registered_shift = unsafe {
+                        RegisterHotKey(
+                            hwnd,
+                            HOTKEY_ID_SHIFT_BACKSPACE,
+                            MOD_SHIFT | MOD_NOREPEAT,
+                            VK_BACK.0 as u32,
+                        )
+                    };
+                    if registered_shift.is_ok() {
+                        eprintln!(
+                            "[HOTKEY] Successfully registered Shift+Backspace on retry attempt {}",
+                            attempt
+                        );
+                        break;
+                    }
+                    err = unsafe { GetLastError().0 };
+                    if err != ERROR_HOTKEY_ALREADY_REGISTERED {
+                        break;
+                    }
+                }
             }
-            return;
+
+            if let Err(final_err) = registered_shift {
+                eprintln!(
+                    "[HOTKEY] RegisterHotKey failed for Shift+Backspace: {} (GetLastError={})",
+                    final_err, err
+                );
+                unsafe {
+                    let _ = DestroyWindow(hwnd);
+                }
+                return;
+            }
         }
 
         // Register Ctrl+Backspace diagnostic hotkey
