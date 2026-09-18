@@ -195,6 +195,11 @@ export class VoiceRecorderController {
           stream,
           deviceId,
           adapter: options.adapter as any,
+          onPartial: (text) => {
+            if (sessionId === this.sessionId) {
+              options.onPartial?.(text);
+            }
+          },
           onFailure: (error) => {
             console.error("[VoiceController] Engine failure", { sessionId, error });
             this.fail(voiceError("recorder_failed", error), sessionId);

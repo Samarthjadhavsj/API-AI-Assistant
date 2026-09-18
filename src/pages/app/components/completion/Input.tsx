@@ -43,6 +43,7 @@ export const Input = ({
 }: UseCompletionReturn & { isHidden: boolean; onVoiceStateChange?: (state: string) => void }) => {
   const [voiceUiState, setVoiceUiState] = useState<VoiceUiState>("idle");
   const [voiceTranscript, setVoiceTranscript] = useState("");
+  const [voiceLiveTranscript, setVoiceLiveTranscript] = useState("");
   const [voiceStream, setVoiceStream] = useState<MediaStream | null>(null);
   const [voiceError, setVoiceError] = useState<string>("");
   const { selectedAudioDevices, selectedSttProvider } = useApp();
@@ -50,6 +51,9 @@ export const Input = ({
 
   const voice = useVoiceInput({
     maxDurationMs: 3 * 60 * 1000,
+    onPartial: (transcript) => {
+      setVoiceLiveTranscript(transcript);
+    },
     onResult: (result) => {
       const transcript = result.text.trim();
       if (transcript) {
@@ -105,6 +109,7 @@ export const Input = ({
     }
 
     setVoiceUiState("listening");
+    setVoiceLiveTranscript("");
 
     let startPromise: Promise<boolean> | null = null;
     try {
@@ -139,6 +144,7 @@ export const Input = ({
     } finally {
       setVoiceUiState("idle");
       setVoiceTranscript("");
+      setVoiceLiveTranscript("");
       setVoiceStream(null);
       setVoiceError("");
 
@@ -180,6 +186,7 @@ export const Input = ({
       }
       setVoiceUiState("idle");
       setVoiceTranscript("");
+      setVoiceLiveTranscript("");
       setVoiceStream(null);
     } catch (error) {
       console.error("[VoiceInput] Error stopping voice recording:", error);
@@ -209,6 +216,7 @@ export const Input = ({
     if (voice.state === "idle" && voiceUiState === "listening") {
       setVoiceUiState("idle");
       setVoiceTranscript("");
+      setVoiceLiveTranscript("");
       setVoiceStream(null);
     }
   }, [voice.state, voiceUiState]);
@@ -258,7 +266,7 @@ export const Input = ({
             <VoiceInputBar
               state={voiceUiState}
               uiState={voiceUiState}
-              transcript={voiceTranscript}
+              transcript={voiceLiveTranscript || voiceTranscript}
               stream={voiceStream}
               onMicClick={handleMicClick}
               onCancel={handleVoiceCancel}

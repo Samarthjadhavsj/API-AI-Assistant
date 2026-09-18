@@ -2,6 +2,26 @@ import { describe, expect, it, vi } from "vitest";
 import { VoiceRecorderController } from "./VoiceRecorderController";
 import { AudioArtifact, SttAdapter, SttResult } from "./types";
 
+const mockedLiveRecorder = vi.hoisted(() => ({ options: null as any }));
+
+vi.mock("./LiveRecorderEngine", () => ({
+  LiveRecorderEngine: class {
+    readonly stream: MediaStream;
+
+    constructor(options: any) {
+      this.stream = options.stream;
+      mockedLiveRecorder.options = options;
+    }
+
+    start() {}
+    async stop() {
+      return null;
+    }
+    async cancel() {}
+    releaseTracks() {}
+  },
+}));
+
 function fakeStream() {
   const stop = vi.fn();
   return {
@@ -122,6 +142,19 @@ describe("VoiceRecorderController", () => {
     expect(controller.getSnapshot().state).toBe("idle");
     expect(engine.releaseTracks).toHaveBeenCalled();
     expect(stop).toHaveBeenCalled();
+  });
+
+  it("forwards live partial transcripts to the start callback", async () => {
+    const { stream } = fakeStream();
+    const controller = new VoiceRecorderController({ request: async () => stream });
+    const onPartial = vi.fn();
+    const adapter = { ...fakeAdapter(), kind: "live-websocket" as const };
+
+    await controller.start({ adapter, ownerId: "overlay", onPartial });
+    mockedLiveRecorder.options.onPartial("words in progress");
+
+    expect(onPartial).toHaveBeenCalledWith("words in progress");
+    controller.dispose();
   });
 
   it("does not treat an empty provider transcript as success", async () => {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Mic, X, Check, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -16,7 +16,7 @@ export interface VoiceInputBarProps {
   className?: string;
   inputValue?: string;
   onInputChange?: (value: string) => void;
-  inputRef?: React.RefObject<HTMLInputElement | null>;
+  inputRef?: React.RefObject<HTMLTextAreaElement | null>;
   onKeyPress?: (e: React.KeyboardEvent) => void;
   onPaste?: (e: React.ClipboardEvent) => void;
   disabled?: boolean;
@@ -29,10 +29,13 @@ const ANIMATION_CONFIG = {
   DOT_COUNT: 15,
   AMPLITUDE_THRESHOLD: 2,
 } as const;
+const MAX_TEXTAREA_HEIGHT = 160;
+const MIN_TEXTAREA_HEIGHT = 20;
 
 export function VoiceInputBar({
   state,
   uiState,
+  transcript,
   stream = null,
   onMicClick,
   onCancel,
@@ -68,6 +71,33 @@ export function VoiceInputBar({
   const analyserRef = useRef<AnalyserNode | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const displayValue = activeUiState === "listening" && transcript !== undefined
+    ? transcript
+    : inputValue;
+
+  const setTextareaRef = useCallback(
+    (element: HTMLTextAreaElement | null) => {
+      textareaRef.current = element;
+      if (inputRef) {
+        (inputRef as React.MutableRefObject<HTMLTextAreaElement | null>).current = element;
+      }
+    },
+    [inputRef]
+  );
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    textarea.style.height = "auto";
+    const height = Math.max(
+      MIN_TEXTAREA_HEIGHT,
+      Math.min(textarea.scrollHeight, MAX_TEXTAREA_HEIGHT)
+    );
+    textarea.style.height = `${height}px`;
+    textarea.style.overflowY = textarea.scrollHeight > MAX_TEXTAREA_HEIGHT ? "auto" : "hidden";
+  }, [displayValue]);
 
   const cleanupAudio = () => {
     if (animationRef.current) {
@@ -187,24 +217,29 @@ export function VoiceInputBar({
     };
   }, []);
 
+  const renderTextarea = () => (
+    <div className="flex items-center flex-1 min-w-0 self-stretch">
+      <textarea
+        ref={setTextareaRef}
+        placeholder="Write a message…"
+        value={displayValue}
+        onChange={(e) => onInputChange?.(e.target.value)}
+        onKeyPress={onKeyPress}
+        onPaste={onPaste}
+        disabled={disabled}
+        rows={1}
+        className="flex-1 min-w-0 min-h-5 max-h-40 border-none bg-transparent p-0 text-sm leading-5 text-white placeholder:text-white/60 resize-none focus:outline-none focus:ring-0"
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="off"
+        spellCheck={false}
+      />
+    </div>
+  );
+
   const renderIdleState = () => (
     <>
-      <div className="flex items-center flex-1 min-w-0">
-        <input
-          ref={inputRef as React.RefObject<HTMLInputElement>}
-          placeholder="Write a message…"
-          value={inputValue}
-          onChange={(e) => onInputChange?.(e.target.value)}
-          onKeyPress={onKeyPress}
-          onPaste={onPaste}
-          disabled={disabled}
-          className="flex-1 min-w-0 border-none bg-transparent p-0 h-5 text-sm text-white placeholder:text-white/60 focus:outline-none focus:ring-0"
-          autoComplete="off"
-          autoCorrect="off"
-          autoCapitalize="off"
-          spellCheck={false}
-        />
-      </div>
+      {renderTextarea()}
 
       <div className="flex items-center gap-2 flex-shrink-0">
         <button
@@ -232,9 +267,10 @@ export function VoiceInputBar({
 
   const renderListeningState = () => (
     <>
-      {/* Audio visualization wave placed where Listening text was */}
-      <div className="flex items-center flex-1 min-w-0 h-5" data-testid="audio-visualization">
-        <div className="flex items-center justify-center gap-[2px] overflow-hidden h-5 relative w-28">
+      {renderTextarea()}
+
+      <div className="flex items-center flex-shrink-0 h-5" data-testid="audio-visualization">
+        <div className="flex items-center justify-center gap-[2px] overflow-hidden h-5 relative w-12">
           {dotHeights.map((height, i) => (
             <div
               key={i}
@@ -331,7 +367,7 @@ export function VoiceInputBar({
             "transition-all duration-200",
             "min-w-0",
             "max-w-full",
-            "h-10",
+            "min-h-10",
             activeUiState === "error" && "border-red-500/50 bg-[#251a1a]"
           )}
         >

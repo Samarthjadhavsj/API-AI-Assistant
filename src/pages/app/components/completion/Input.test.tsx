@@ -5,6 +5,7 @@ import { Input } from "./Input";
 
 const mocked = vi.hoisted(() => ({
   voice: null as any,
+  voiceOptions: null as any,
   invoke: vi.fn(async () => undefined),
 }));
 
@@ -22,10 +23,11 @@ vi.mock("@/components/ui/popover", () => ({
 }));
 vi.mock("./MessageHistory", () => ({ MessageHistory: () => null }));
 vi.mock("./VoiceInputBar", () => ({
-  VoiceInputBar: ({ state, isProcessing, onMicClick, onCancel, onConfirm, errorMessage }: any) => (
+  VoiceInputBar: ({ state, isProcessing, onMicClick, onCancel, onConfirm, errorMessage, transcript }: any) => (
     <>
       <span data-testid="voice-status">{isProcessing ? "Processing..." : state}</span>
       <span data-testid="voice-error">{errorMessage}</span>
+      <span data-testid="voice-transcript">{transcript}</span>
       <button onClick={onMicClick}>mic</button>
       <button disabled={isProcessing} onClick={onCancel}>cancel</button>
       <button disabled={isProcessing} onClick={onConfirm}>confirm</button>
@@ -33,7 +35,10 @@ vi.mock("./VoiceInputBar", () => ({
   ),
 }));
 vi.mock("@/hooks/useVoiceInput", () => ({
-  useVoiceInput: () => mocked.voice,
+  useVoiceInput: (options: any) => {
+    mocked.voiceOptions = options;
+    return mocked.voice;
+  },
 }));
 vi.mock("@/contexts", () => ({
   useApp: () => ({
@@ -80,6 +85,7 @@ describe("Input voice lifecycle", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocked.voice = voiceSnapshot("idle");
+    mocked.voiceOptions = null;
   });
 
   it("does not cancel an active session when the voice snapshot changes", async () => {
@@ -113,6 +119,17 @@ describe("Input voice lifecycle", () => {
 
     expect(recordingSnapshot.stop).toHaveBeenCalledOnce();
     expect(setInput).toHaveBeenCalledWith("final words");
+  });
+
+  it("stores live partial transcripts without changing the final input", () => {
+    render(<Input {...completionProps} />);
+
+    act(() => {
+      mocked.voiceOptions.onPartial("words in progress");
+    });
+
+    expect(screen.getByTestId("voice-transcript")).toHaveTextContent("words in progress");
+    expect(completionProps.setInput).not.toHaveBeenCalled();
   });
 
   it("keeps cancel separate from confirmation and discards the transcript", async () => {

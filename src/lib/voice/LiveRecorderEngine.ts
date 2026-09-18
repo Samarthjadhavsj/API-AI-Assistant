@@ -10,6 +10,7 @@ import { voiceError } from "./errors";
 
 export interface LiveRecorderEngineOptions extends RecorderEngineOptions {
   adapter: SttAdapter & { kind: "live-websocket" };
+  onPartial?: (text: string) => void;
 }
 
 export class LiveRecorderEngine implements IRecorderEngine {
@@ -17,6 +18,7 @@ export class LiveRecorderEngine implements IRecorderEngine {
   private readonly adapter: SttAdapter & { kind: "live-websocket" };
   private readonly deviceId: string | null;
   private readonly onFailure: (error: unknown) => void;
+  private readonly onPartial?: (text: string) => void;
   private readonly startedAt = Date.now();
 
   private streamer: ILivePcmStreamer | null = null;
@@ -25,10 +27,11 @@ export class LiveRecorderEngine implements IRecorderEngine {
   private stopped = false;
   private cancelled = false;
 
-  constructor({ stream, deviceId, onFailure, adapter }: LiveRecorderEngineOptions) {
+  constructor({ stream, deviceId, onFailure, onPartial, adapter }: LiveRecorderEngineOptions) {
     this.stream = stream;
     this.deviceId = deviceId;
     this.onFailure = onFailure;
+    this.onPartial = onPartial;
     this.adapter = adapter;
   }
 
@@ -59,7 +62,7 @@ export class LiveRecorderEngine implements IRecorderEngine {
       signal: this.transcriptionAbort.signal,
       onPartial: (text) => {
         console.log("[LiveRecorderEngine] Partial transcript:", text);
-        // Partial transcripts can be handled by the controller in the future
+        this.onPartial?.(text);
       },
     });
 

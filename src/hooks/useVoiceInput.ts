@@ -21,6 +21,7 @@ export function invokeVoiceShortcutToggle() {
 
 interface UseVoiceInputOptions {
   maxDurationMs?: number;
+  onPartial?: (text: string) => void;
   onResult?: (result: SttResult) => void;
 }
 
@@ -34,8 +35,10 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}) {
   const { selectedSttProvider, allSttProviders } = useApp();
   const ownerId = useRef(`voice-input-${++nextOwnerId}`);
   const configuration = useRef({ selectedSttProvider, allSttProviders, options });
+  const partialListener = useRef(options.onPartial);
   const resultListener = useRef(options.onResult);
   configuration.current = { selectedSttProvider, allSttProviders, options };
+  partialListener.current = options.onPartial;
   resultListener.current = options.onResult;
 
   useEffect(() => {
@@ -44,6 +47,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}) {
       // example hiding the overlay) must not silently stop an active session.
       // The controller remains available to every other mounted surface and
       // only app-level teardown should dispose it.
+      partialListener.current = undefined;
       resultListener.current = undefined;
     };
   }, []);
@@ -58,6 +62,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}) {
       deviceId,
       maxDurationMs: current.options.maxDurationMs,
       ownerId: ownerId.current,
+      onPartial: (text) => partialListener.current?.(text),
       onResult: (result) => resultListener.current?.(result),
     });
   }, []);
