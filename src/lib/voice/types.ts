@@ -74,5 +74,6 @@ export interface VoiceStartOptions {
   deviceId?: string;
   maxDurationMs?: number;
   ownerId: string;
+  onPartial?: (text: string) => void;
   onResult?: (result: SttResult) => void;
 }
