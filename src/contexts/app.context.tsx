@@ -121,7 +121,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           provider: GEMINI_TRANSCRIBE_PROVIDER_ID,
           variables: {
             api_key: saved.variables?.api_key || "",
-            model: GEMINI_TRANSCRIBE_MODEL,
+            model: saved.variables?.model ?? GEMINI_TRANSCRIBE_MODEL,
           },
         };
       }
@@ -214,7 +214,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           provider: GEMINI_TRANSCRIBE_PROVIDER_ID,
           variables: {
             api_key: saved.variables?.api_key || "",
-            model: GEMINI_TRANSCRIBE_MODEL,
+            model: saved.variables?.model ?? GEMINI_TRANSCRIBE_MODEL,
           },
         });
       } catch (error) {
@@ -478,7 +478,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       provider: GEMINI_TRANSCRIBE_PROVIDER_ID,
       variables: {
         api_key: variables.api_key || "",
-        model: GEMINI_TRANSCRIBE_MODEL,
+        model: variables.model ?? GEMINI_TRANSCRIBE_MODEL,
       },
     });
   };

@@ -9,7 +9,7 @@ const BATCH_TRANSCRIBE_MODEL = "gemini-3.5-transcribe";
 const LIVE_TRANSCRIBE_MODEL = "gemini-3.5-transcribe-live";
 const FILE_POLL_TIMEOUT_MS = 120_000;
 const INTERACTION_POLL_TIMEOUT_MS = 120_000;
-const INITIAL_POLL_DELAY_MS = 500;
+const INITIAL_POLL_DELAY_MS = 100;
 const MAX_POLL_DELAY_MS = 10_000;
 
 export type GeminiSttFailureCode = "upload_failed" | "polling_timeout" | "stt_request_failed";
@@ -70,6 +70,14 @@ export function formatGeminiLiveError(message: string): Error {
       "Gemini rejected this API key. Paste the key value only (not `GEMINI_API_KEY=…` or a URL). " +
         "If it still fails, create a new Gemini API Auth key in Google AI Studio and restrict it to the Gemini API."
     );
+  }
+
+  if (
+    /RESOURCE_EXHAUSTED|rateLimitExceeded|exceeded your current quota|quota.*exceeded/i.test(
+      message
+    )
+  ) {
+    return new Error("Voice transcription quota exceeded. Try again later.");
   }
 
   return new Error(message || "Gemini transcription failed.");

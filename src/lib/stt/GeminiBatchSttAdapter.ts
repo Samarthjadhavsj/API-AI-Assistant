@@ -11,7 +11,7 @@ export class GeminiBatchSttAdapter implements SttAdapter {
   constructor(
     readonly providerId: string,
     private readonly variables: Record<string, string>
-  ) {}
+  ) { }
 
   async transcribe(
     artifact: AudioArtifact,

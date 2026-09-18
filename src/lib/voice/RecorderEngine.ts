@@ -61,12 +61,13 @@ export class RecorderEngine implements IRecorderEngine {
 
   private buildArtifact(): AudioArtifact | null {
     if (this.discard) return null;
-    return buildAudioArtifact({
+    const artifact = buildAudioArtifact({
       chunks: this.chunks,
       mimeType: this.recorder.mimeType || this.mimeType || "audio/webm",
       startedAt: this.startedAt,
       deviceId: this.deviceId,
     });
+    return artifact;
   }
 
   start() {
@@ -136,7 +137,7 @@ export class RecorderEngine implements IRecorderEngine {
       trackCount: tracks.length,
       tracks: tracks.map(t => ({ id: t.id, kind: t.kind, readyState: t.readyState }))
     });
-    
+
     tracks.forEach((track) => {
       try {
         if (track.readyState !== 'ended') {
@@ -150,7 +151,7 @@ export class RecorderEngine implements IRecorderEngine {
         console.error("[RecorderEngine] Error stopping track", { id: track.id, error });
       }
     });
-    
+
     // Verify all tracks are stopped
     const remainingActive = tracks.filter(t => t.readyState !== 'ended');
     if (remainingActive.length > 0) {

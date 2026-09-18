@@ -2,7 +2,6 @@ import { Button, Header, TextInput } from "@/components";
 import { ApiKeyInput } from "@/components/ui/api-key-input";
 import { UseSettingsReturn } from "@/types";
 import { KeyIcon, TrashIcon } from "lucide-react";
-import { GEMINI_TRANSCRIBE_MODEL } from "@/config/stt.constants";
 
 export const VoiceTranscriptionSettings = ({
   selectedSttProvider,
@@ -13,7 +12,7 @@ export const VoiceTranscriptionSettings = ({
   };
 
   const getModelValue = () => {
-    return selectedSttProvider?.variables?.model || GEMINI_TRANSCRIBE_MODEL;
+    return selectedSttProvider?.variables?.model ?? "";
   };
 
   const isApiKeyEmpty = () => {

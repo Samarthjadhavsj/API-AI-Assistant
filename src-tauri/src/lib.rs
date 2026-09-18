@@ -4,6 +4,7 @@ mod db;
 mod shortcuts;
 mod tray;
 mod window;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{Listener, Manager};
 use tauri_plugin_posthog::{init as posthog_init, PostHogConfig, PostHogOptions};
@@ -11,6 +12,9 @@ use tokio::task::JoinHandle;
 mod speaker;
 use capture::CaptureState;
 use speaker::VadConfig;
+
+// Static flag to track voice recording state, similar to user_hidden pattern
+static IS_RECORDING: AtomicBool = AtomicBool::new(false);
 
 #[cfg(target_os = "windows")]
 use windows::Win32::Foundation::GetLastError;
@@ -79,6 +83,12 @@ fn resize_main_window(app: tauri::AppHandle, width: f64, height: f64) -> Result<
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn set_recording_state(recording: bool) {
+    IS_RECORDING.store(recording, Ordering::SeqCst);
+    eprintln!("[RECORDING_STATE] Voice recording state set to: {}", recording);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Fix WebView2 transparency on Windows
@@ -129,6 +139,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_app_version,
             resize_main_window,
+            set_recording_state,
             window::set_window_height,
             window::move_window,
             capture::capture_to_base64,
@@ -179,9 +190,10 @@ pub fn run() {
                         if let tauri::WindowEvent::Focused(false) = event {
                             let current_user_hidden =
                                 user_hidden.load(std::sync::atomic::Ordering::SeqCst);
+                            let current_recording = IS_RECORDING.load(Ordering::SeqCst);
 
-                            // Only re-show if user didn't explicitly hide it
-                            if !current_user_hidden {
+                            // Only re-show if user didn't explicitly hide it AND not recording
+                            if !current_user_hidden && !current_recording {
                                 let show_res = window_for_handler.show();
                                 if let Err(e) = show_res {
                                     eprintln!("[AUTO-RESTORE] Failed to show window: {}", e);

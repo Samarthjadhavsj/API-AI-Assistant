@@ -13,6 +13,7 @@ const MESSAGES: Record<VoiceErrorCode, string> = {
   upload_failed: "The recording could not be uploaded for transcription. Please try again.",
   polling_timeout: "The transcription service took too long to prepare the recording. Please try again.",
   provider_returned_no_text: "No speech was recognized. Please try again.",
+  no_speech_detected: "No speech detected. Please try again.",
   stt_request_failed: "Transcription failed. Please try again.",
   stt_aborted: "Transcription was cancelled.",
   unknown: "Unable to start voice input. Please try again.",

@@ -76,6 +76,109 @@ describe("Gemini transcription configuration", () => {
     ).toContain("Gemini rejected this API key");
   });
 
+  it("returns a clean user-facing message for quota/rate-limit errors", () => {
+    const quotaMessages = [
+      "You exceeded your current quota, please refer to https://ai.google.dev/gemini-api/docs/rate-limits for more information.",
+      "RESOURCE_EXHAUSTED: Quota exceeded for quota metric",
+      "rateLimitExceeded: Too many requests",
+      "quota exceeded for this project",
+    ];
+    for (const msg of quotaMessages) {
+      expect(formatGeminiLiveError(msg).message).toBe(
+        "Voice transcription quota exceeded. Try again later."
+      );
+    }
+  });
+
+  it("passes through an unrecognised STT error message unchanged", () => {
+    const raw = "The audio file could not be decoded.";
+    expect(formatGeminiLiveError(raw).message).toBe(raw);
+  });
+
+  it("does NOT classify normal STT errors with 'limit' as quota errors", () => {
+    const nonQuotaErrors = [
+      "The audio file size limit was exceeded for this request.",
+      "File size exceeds the allowed limit.",
+      "Duration limit reached for audio processing.",
+      "Character limit exceeded in the input.",
+      "The request exceeds the parameter limit.",
+    ];
+    for (const msg of nonQuotaErrors) {
+      expect(formatGeminiLiveError(msg).message).toBe(msg);
+      expect(formatGeminiLiveError(msg).message).not.toBe(
+        "Voice transcription quota exceeded. Try again later."
+      );
+    }
+  });
+
+  it("does NOT classify network/timeout errors as quota errors", () => {
+    const networkErrors = [
+      "Network error occurred",
+      "Request timeout",
+      "Connection refused",
+      "Failed to fetch",
+      "ETIMEDOUT",
+    ];
+    for (const msg of networkErrors) {
+      expect(formatGeminiLiveError(msg).message).toBe(msg);
+      expect(formatGeminiLiveError(msg).message).not.toBe(
+        "Voice transcription quota exceeded. Try again later."
+      );
+    }
+  });
+
+  it("classifies genuine RESOURCE_EXHAUSTED errors as quota errors", () => {
+    const resourceExhaustedErrors = [
+      "RESOURCE_EXHAUSTED: Quota exceeded for quota metric",
+      "RESOURCE_EXHAUSTED: User Rate Limit Exceeded",
+      "RESOURCE_EXHAUSTED: quota exceeded",
+    ];
+    for (const msg of resourceExhaustedErrors) {
+      expect(formatGeminiLiveError(msg).message).toBe(
+        "Voice transcription quota exceeded. Try again later."
+      );
+    }
+  });
+
+  it("classifies genuine rateLimitExceeded errors as quota errors", () => {
+    const rateLimitErrors = [
+      "rateLimitExceeded: Too many requests",
+      "rateLimitExceeded: User Rate Limit Exceeded",
+    ];
+    for (const msg of rateLimitErrors) {
+      expect(formatGeminiLiveError(msg).message).toBe(
+        "Voice transcription quota exceeded. Try again later."
+      );
+    }
+  });
+
+  it("classifies quota exceeded errors as quota errors", () => {
+    const quotaErrors = [
+      "You exceeded your current quota, please refer to https://ai.google.dev/gemini-api/docs/rate-limits for more information.",
+      "quota exceeded for this project",
+      "Quota exceeded for API requests",
+    ];
+    for (const msg of quotaErrors) {
+      expect(formatGeminiLiveError(msg).message).toBe(
+        "Voice transcription quota exceeded. Try again later."
+      );
+    }
+  });
+
+  it("API key error handling remains unchanged", () => {
+    const apiKeyErrors = [
+      "API key not valid. Please pass a valid API key.",
+      "API_KEY_INVALID",
+      "api key invalid",
+      "api_key_INVALID not valid",
+    ];
+    for (const msg of apiKeyErrors) {
+      expect(formatGeminiLiveError(msg).message).toContain(
+        "Gemini rejected this API key"
+      );
+    }
+  });
+
   it("strips codec parameters from recorded audio MIME types", () => {
     expect(geminiAudioMimeType("audio/webm;codecs=opus")).toBe("audio/webm");
   });
@@ -220,5 +323,39 @@ describe("Gemini transcription configuration", () => {
         headers: { "x-goog-api-key": "AIzaExample" },
       })
     );
+  });
+
+  it("shows a clean quota message when the Interactions API returns 429", async () => {
+    vi.mocked(tauriFetch)
+      .mockResolvedValueOnce(
+        new Response("", {
+          status: 200,
+          headers: { "x-goog-upload-url": "https://upload.example.test/voice" },
+        }) as any
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ file: uploadedFile }), { status: 200 }) as any
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: {
+              code: 429,
+              message:
+                "You exceeded your current quota, please refer to https://ai.google.dev/gemini-api/docs/rate-limits for more information.",
+              status: "RESOURCE_EXHAUSTED",
+            },
+          }),
+          { status: 429 }
+        ) as any
+      )
+      .mockResolvedValueOnce(new Response("{}", { status: 200 }) as any);
+
+    await expect(
+      fetchGeminiLiveSTT(new Blob(["clip"], { type: "audio/webm" }), "AIzaExample")
+    ).rejects.toThrow("Voice transcription quota exceeded. Try again later.");
+
+    // File must still be deleted even on quota failure.
+    await expectUploadCleanup();
   });
 });

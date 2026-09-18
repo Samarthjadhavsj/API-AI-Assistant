@@ -19,6 +19,7 @@ export type VoiceErrorCode =
   | "upload_failed"
   | "polling_timeout"
   | "provider_returned_no_text"
+  | "no_speech_detected"
   | "stt_request_failed"
   | "stt_aborted"
   | "unknown";

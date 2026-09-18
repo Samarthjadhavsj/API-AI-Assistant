@@ -102,6 +102,8 @@ export class VoiceRecorderController {
         upload_failed: true,
         polling_timeout: true,
         provider_returned_no_text: true,
+        no_speech_detected: true,
+        recorder_failed: true,
       }) {
         return voiceError(candidate.code as VoiceError["code"], error, candidate.message);
       }
@@ -183,16 +185,36 @@ export class VoiceRecorderController {
     }
 
     try {
-      const engine = this.createEngine({
-        stream,
-        deviceId,
-        onFailure: (error) => {
-          console.error("[VoiceController] Engine failure", { sessionId, error });
-          this.fail(voiceError("recorder_failed", error), sessionId);
-        },
-      });
-      this.engine = engine;
-      engine.start();
+      // Detect if using live adapter and create appropriate engine
+      const isLiveAdapter = options.adapter?.kind === "live-websocket";
+
+      if (isLiveAdapter) {
+        // Import and use LiveRecorderEngine for live streaming
+        const { LiveRecorderEngine } = await import("./LiveRecorderEngine");
+        const engine = new LiveRecorderEngine({
+          stream,
+          deviceId,
+          adapter: options.adapter as any,
+          onFailure: (error) => {
+            console.error("[VoiceController] Engine failure", { sessionId, error });
+            this.fail(voiceError("recorder_failed", error), sessionId);
+          },
+        });
+        this.engine = engine;
+      } else {
+        // Use standard RecorderEngine for batch processing
+        const engine = this.createEngine({
+          stream,
+          deviceId,
+          onFailure: (error) => {
+            console.error("[VoiceController] Engine failure", { sessionId, error });
+            this.fail(voiceError("recorder_failed", error), sessionId);
+          },
+        });
+        this.engine = engine;
+      }
+
+      this.engine.start();
       const startedAt = Date.now();
       console.log("[VoiceController] Recording started successfully", { sessionId, startedAt, deviceId });
       this.publish({
@@ -226,9 +248,15 @@ export class VoiceRecorderController {
   }
 
   async stop(ownerId?: string): Promise<SttResult | null> {
-    if (!this.isOwnedBy(ownerId)) return null;
-    if (this.snapshot.state === "transcribing" || this.snapshot.state === "finalizing") return null;
-    if (this.snapshot.state !== "recording" || !this.engine) return null;
+    if (!this.isOwnedBy(ownerId)) {
+      return null;
+    }
+    if (this.snapshot.state === "transcribing" || this.snapshot.state === "finalizing") {
+      return null;
+    }
+    if (this.snapshot.state !== "recording" || !this.engine) {
+      return null;
+    }
 
     const sessionId = this.sessionId;
     const engine = this.engine;
@@ -242,10 +270,17 @@ export class VoiceRecorderController {
     try {
       artifact = await engine.stop();
     } catch (error) {
+      // Preserve no_speech_detected error from engine
+      if (error && typeof error === "object" && "code" in error && error.code === "no_speech_detected") {
+        this.fail(this.asVoiceError(error), sessionId);
+        throw error;
+      }
       this.fail(voiceError("recorder_failed", error), sessionId);
       throw error;
     }
-    if (sessionId !== this.sessionId) return null;
+    if (sessionId !== this.sessionId) {
+      return null;
+    }
     this.releaseEngine();
     if (!artifact) {
       const error = voiceError("no_audio_captured");
@@ -262,10 +297,13 @@ export class VoiceRecorderController {
     this.publish({ ...this.snapshot, state: "transcribing", stream: null, activeOwnerId });
     try {
       const result = await adapter.transcribe(artifact, { signal: this.abortController.signal });
-      if (sessionId !== this.sessionId || this.abortController.signal.aborted) return null;
+
+      if (sessionId !== this.sessionId || this.abortController.signal.aborted) {
+        return null;
+      }
       if (!result.text.trim()) {
-        // Let the common catch path transition to the error state exactly once.
-        throw voiceError("provider_returned_no_text");
+        // Empty transcript means no speech was detected
+        throw voiceError("no_speech_detected");
       }
       this.reset();
       onResult?.(result);

@@ -1,5 +1,6 @@
 export const GEMINI_TRANSCRIBE_PROVIDER_ID = "gemini-transcribe";
 export const GEMINI_TRANSCRIBE_MODEL = "gemini-3.5-transcribe";
+export const GEMINI_TRANSCRIBE_LIVE_MODEL = "gemini-3.5-transcribe-live";
 
 /**
  * Voice input is intentionally Gemini-only. A finished microphone clip is

@@ -144,10 +144,40 @@ describe("VoiceRecorderController", () => {
     });
 
     await expect(controller.stop("overlay")).rejects.toMatchObject({
-      code: "provider_returned_no_text",
+      code: "no_speech_detected",
     });
     expect(controller.getSnapshot().state).toBe("error");
-    expect(controller.getSnapshot().error?.code).toBe("provider_returned_no_text");
+    expect(controller.getSnapshot().error?.code).toBe("no_speech_detected");
+  });
+
+  it("handles no_speech_detected error from adapter", async () => {
+    const { stream } = fakeStream();
+    const engine = {
+      stream,
+      start: vi.fn(),
+      stop: vi.fn(async () => {
+        throw { code: "no_speech_detected", message: "No speech detected. Please try again." };
+      }),
+      cancel: vi.fn(async () => undefined),
+      releaseTracks: vi.fn(),
+    };
+    const controller = new VoiceRecorderController(
+      { request: async () => stream },
+      () => engine
+    );
+
+    const adapter = fakeAdapter();
+
+    await controller.start({
+      adapter,
+      ownerId: "overlay",
+    });
+
+    await expect(controller.stop("overlay")).rejects.toMatchObject({
+      code: "no_speech_detected",
+    });
+    expect(controller.getSnapshot().state).toBe("error");
+    expect(controller.getSnapshot().error?.message).toBe("No speech detected. Please try again.");
   });
 
   it("ignores stop and cancel from a surface that does not own the session", async () => {

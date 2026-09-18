@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { Mic, X, Check } from "lucide-react";
+import { Mic, X, Check, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type VoiceInputState = "idle" | "listening" | "active";
+export type VoiceUiState = "idle" | "listening" | "processing" | "error";
+export type VoiceInputState = "idle" | "listening" | "active" | "processing" | "error";
 
-interface VoiceInputBarProps {
-  state: VoiceInputState;
+export interface VoiceInputBarProps {
+  state?: VoiceInputState;
+  uiState?: VoiceUiState;
   transcript?: string;
   stream?: MediaStream | null;
   onMicClick: () => void;
@@ -18,18 +20,19 @@ interface VoiceInputBarProps {
   onKeyPress?: (e: React.KeyboardEvent) => void;
   onPaste?: (e: React.ClipboardEvent) => void;
   disabled?: boolean;
+  isProcessing?: boolean;
+  isProviderConfigured?: boolean;
+  errorMessage?: string;
 }
 
 const ANIMATION_CONFIG = {
   DOT_COUNT: 15,
-  DOT_SIZE: 2,
-  DOT_SPACING: 4,
-  AMPLITUDE_THRESHOLD: 2, // Very low threshold for more responsive speech detection
+  AMPLITUDE_THRESHOLD: 2,
 } as const;
 
 export function VoiceInputBar({
   state,
-  transcript = "",
+  uiState,
   stream = null,
   onMicClick,
   onCancel,
@@ -41,47 +44,84 @@ export function VoiceInputBar({
   onKeyPress,
   onPaste,
   disabled = false,
+  isProcessing = false,
+  isProviderConfigured = true,
+  errorMessage = "",
 }: VoiceInputBarProps) {
-  const [isAboveThreshold, setIsAboveThreshold] = useState(false);
-  const [dotHeights, setDotHeights] = useState<number[]>(Array(ANIMATION_CONFIG.DOT_COUNT).fill(2));
+  // Explicit UI state resolution: prefers uiState, falls back to processing/state mapping
+  const activeUiState: VoiceUiState =
+    uiState ??
+    (isProcessing
+      ? "processing"
+      : state === "processing"
+      ? "processing"
+      : state === "error"
+      ? "error"
+      : state === "listening" || state === "active"
+      ? "listening"
+      : "idle");
+
+  const [dotHeights, setDotHeights] = useState<number[]>(
+    Array(ANIMATION_CONFIG.DOT_COUNT).fill(2)
+  );
   const animationRef = useRef<number | undefined>(undefined);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const animationTimeRef = useRef<number>(0);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // Web Audio API setup for real-time audio analysis
+  const cleanupAudio = () => {
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current);
+      animationRef.current = undefined;
+    }
+
+    if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+      audioContextRef.current
+        .close()
+        .catch((error) => console.error("[VoiceInputBar] Error closing AudioContext:", error));
+    }
+
+    audioContextRef.current = null;
+    analyserRef.current = null;
+  };
+
+  const cleanupStream = () => {
+    const targetStream = streamRef.current;
+    if (targetStream) {
+      targetStream.getTracks().forEach((track) => {
+        try {
+          if (track.readyState !== "ended") {
+            track.stop();
+          }
+        } catch (error) {
+          console.error("[VoiceInputBar] Error stopping track", { id: track.id, error });
+        }
+      });
+      streamRef.current = null;
+    }
+  };
+
+  // Web Audio API setup for real-time audio analysis - ONLY active during 'listening' state
   useEffect(() => {
-    if (!stream || state === "idle") {
+    if (!stream || activeUiState !== "listening") {
       cleanupAudio();
+      setDotHeights(Array(ANIMATION_CONFIG.DOT_COUNT).fill(2));
       return;
     }
 
-    // Update stream ref
     streamRef.current = stream;
 
     const setupAudio = async () => {
       try {
-        console.log("[VoiceInputBar] Setting up audio analysis", {
-          streamId: stream.id,
-          trackCount: stream.getTracks().length,
-          tracks: stream.getTracks().map(t => ({ id: t.id, kind: t.kind, readyState: t.readyState }))
-        });
-
-        // Verify stream is active before proceeding
-        const activeTracks = stream.getTracks().filter(t => t.readyState === 'live' && t.enabled);
-        if (activeTracks.length === 0) {
-          console.error("[VoiceInputBar] No active tracks in stream", {
-            allTracks: stream.getTracks().map(t => ({ id: t.id, kind: t.kind, readyState: t.readyState, enabled: t.enabled }))
-          });
-          return;
-        }
+        const activeTracks = stream
+          .getTracks()
+          .filter((t) => t.readyState === "live" && t.enabled);
+        if (activeTracks.length === 0) return;
 
         const audioContext = new AudioContext();
         audioContextRef.current = audioContext;
 
         if (audioContext.state === "suspended") {
-          console.log("[VoiceInputBar] AudioContext suspended, resuming...");
           await audioContext.resume();
         }
 
@@ -93,14 +133,39 @@ export function VoiceInputBar({
         const source = audioContext.createMediaStreamSource(stream);
         source.connect(analyser);
 
-        console.log("[VoiceInputBar] Audio analysis setup complete", {
-          contextState: audioContext.state,
-          fftSize: analyser.fftSize,
-          sampleRate: audioContext.sampleRate,
-          activeTracks: activeTracks.length
-        });
+        const analyze = () => {
+          if (!analyserRef.current) return;
 
-        startAudioAnalysis();
+          const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+          analyserRef.current.getByteFrequencyData(dataArray);
+
+          let sum = 0;
+          for (let i = 0; i < dataArray.length; i++) {
+            sum += dataArray[i];
+          }
+          const average = sum / dataArray.length;
+          const isSpeaking = average > ANIMATION_CONFIG.AMPLITUDE_THRESHOLD;
+
+          const heights: number[] = [];
+          const step = Math.floor(dataArray.length / ANIMATION_CONFIG.DOT_COUNT);
+
+          for (let i = 0; i < ANIMATION_CONFIG.DOT_COUNT; i++) {
+            const dataIndex = i * step;
+            const value = dataArray[dataIndex] !== undefined ? dataArray[dataIndex] : 0;
+
+            if (isSpeaking) {
+              const height = Math.max(2, Math.min(18, (value / 255) * 18));
+              heights.push(height);
+            } else {
+              heights.push(2);
+            }
+          }
+
+          setDotHeights(heights);
+          animationRef.current = requestAnimationFrame(analyze);
+        };
+
+        analyze();
       } catch (error) {
         console.error("[VoiceInputBar] Error setting up audio analysis:", error);
       }
@@ -112,118 +177,11 @@ export function VoiceInputBar({
       cleanupAudio();
       cleanupStream();
     };
-  }, [stream, state]);
-
-  const cleanupAudio = () => {
-    console.log("[VoiceInputBar] Cleaning up audio resources", {
-      hasAnimationFrame: !!animationRef.current,
-      hasAudioContext: !!audioContextRef.current,
-      audioContextState: audioContextRef.current?.state
-    });
-
-    if (animationRef.current) {
-      cancelAnimationFrame(animationRef.current);
-      animationRef.current = undefined;
-    }
-
-    if (audioContextRef.current && audioContextRef.current.state !== "closed") {
-      audioContextRef.current.close()
-        .then(() => console.log("[VoiceInputBar] AudioContext closed successfully"))
-        .catch((error) => console.error("[VoiceInputBar] Error closing AudioContext:", error));
-    }
-
-    audioContextRef.current = null;
-    analyserRef.current = null;
-  };
-
-  const cleanupStream = () => {
-    const targetStream = streamRef.current;
-    if (targetStream) {
-      console.log("[VoiceInputBar] Cleaning up media stream tracks", {
-        trackCount: targetStream.getTracks().length,
-        tracks: targetStream.getTracks().map(t => ({ id: t.id, kind: t.kind, readyState: t.readyState }))
-      });
-
-      targetStream.getTracks().forEach((track) => {
-        try {
-          if (track.readyState !== 'ended') {
-            console.log("[VoiceInputBar] Stopping track", { id: track.id, kind: track.kind, readyState: track.readyState });
-            track.stop();
-            console.log("[VoiceInputBar] Track stopped successfully", { id: track.id, newState: track.readyState });
-          } else {
-            console.log("[VoiceInputBar] Track already ended", { id: track.id });
-          }
-        } catch (error) {
-          console.error("[VoiceInputBar] Error stopping track", { id: track.id, error });
-        }
-      });
-
-      streamRef.current = null;
-    }
-  };
-
-  const startAudioAnalysis = () => {
-    const analyze = () => {
-      if (!analyserRef.current) return;
-
-      const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
-      analyserRef.current.getByteFrequencyData(dataArray);
-
-      // Calculate average amplitude
-      let sum = 0;
-      for (let i = 0; i < dataArray.length; i++) {
-        sum += dataArray[i];
-      }
-      const average = sum / dataArray.length;
-
-      const isSpeaking = average > ANIMATION_CONFIG.AMPLITUDE_THRESHOLD;
-      setIsAboveThreshold(isSpeaking);
-
-      // Update animation time for flow effect
-      animationTimeRef.current += 0.05;
-
-      // Generate individual dot heights based on frequency data
-      const heights = [];
-      const step = Math.floor(dataArray.length / ANIMATION_CONFIG.DOT_COUNT);
-      
-      for (let i = 0; i < ANIMATION_CONFIG.DOT_COUNT; i++) {
-        const dataIndex = i * step;
-        const value = dataArray[dataIndex] !== undefined ? dataArray[dataIndex] : 0;
-        
-        if (isSpeaking) {
-          // When speaking, transform dots to bars based on frequency
-          // Create a wave-like pattern with consistent bar widths
-          const height = Math.max(2, Math.min(18, (value / 255) * 18));
-          heights.push(height);
-        } else {
-          // When listening (no speech), keep as small dots
-          heights.push(2);
-        }
-      }
-      
-      setDotHeights(heights);
-
-      animationRef.current = requestAnimationFrame(analyze);
-    };
-
-    analyze();
-  };
-
-  // Determine effective state (listening vs active based on audio threshold)
-  const effectiveState = state === "listening" && isAboveThreshold ? "active" : state;
-
-  // Reset dot heights when not recording or when in listening state without speech
-  useEffect(() => {
-    if (state === "idle") {
-      setDotHeights(Array(ANIMATION_CONFIG.DOT_COUNT).fill(2));
-    }
-    // Don't reset when listening - let the audio analysis handle it
-  }, [state]);
+  }, [stream, activeUiState]);
 
   // Component unmount cleanup
   useEffect(() => {
     return () => {
-      console.log("[VoiceInputBar] Component unmounting, performing final cleanup");
       cleanupAudio();
       cleanupStream();
     };
@@ -231,7 +189,6 @@ export function VoiceInputBar({
 
   const renderIdleState = () => (
     <>
-      {/* Left side */}
       <div className="flex items-center flex-1 min-w-0">
         <input
           ref={inputRef as React.RefObject<HTMLInputElement>}
@@ -241,7 +198,7 @@ export function VoiceInputBar({
           onKeyPress={onKeyPress}
           onPaste={onPaste}
           disabled={disabled}
-          className="flex-1 min-w-0 border-none bg-transparent p-0 h-5 text-sm text-white placeholder:text-white focus:outline-none focus:ring-0"
+          className="flex-1 min-w-0 border-none bg-transparent p-0 h-5 text-sm text-white placeholder:text-white/60 focus:outline-none focus:ring-0"
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"
@@ -249,11 +206,23 @@ export function VoiceInputBar({
         />
       </div>
 
-      {/* Right side - only mic icon */}
       <div className="flex items-center gap-2 flex-shrink-0">
         <button
+          type="button"
           onClick={onMicClick}
-          className="text-white hover:text-white transition-colors"
+          disabled={disabled}
+          className={cn(
+            "transition-colors p-1 rounded-md",
+            isProviderConfigured
+              ? "text-white/80 hover:text-white hover:bg-white/10 cursor-pointer"
+              : "text-white/40 cursor-not-allowed"
+          )}
+          title={
+            isProviderConfigured
+              ? "Voice input"
+              : "Configure API key in Settings to use voice input"
+          }
+          aria-label="Voice input"
         >
           <Mic className="w-4 h-4" />
         </button>
@@ -263,52 +232,51 @@ export function VoiceInputBar({
 
   const renderListeningState = () => (
     <>
-      {/* Left side */}
-      <div className="flex items-center flex-1 min-w-0">
-        <span className="text-gray-400 text-sm italic h-5 flex items-center">Listening…</span>
+      {/* Audio visualization wave placed where Listening text was */}
+      <div className="flex items-center flex-1 min-w-0 h-5" data-testid="audio-visualization">
+        <div className="flex items-center justify-center gap-[2px] overflow-hidden h-5 relative w-28">
+          {dotHeights.map((height, i) => (
+            <div
+              key={i}
+              className="absolute bg-neutral-300"
+              style={{
+                width: "2px",
+                height: `${height}px`,
+                borderRadius: height > 4 ? "1px" : "50%",
+                animation: `flowRightToLeft 5s linear infinite`,
+                animationDelay: `${-i * 0.33}s`,
+                left: "50%",
+              }}
+            />
+          ))}
+        </div>
       </div>
 
-      {/* Animated dots flowing from right to left - slowly */}
-      <div className="flex items-center justify-center gap-[2px] overflow-hidden h-5 relative w-32">
-        {dotHeights.map((height, i) => (
-          <div
-            key={i}
-            className="absolute bg-gray-400"
-            style={{
-              width: '2px',
-              height: `${height}px`,
-              borderRadius: height > 4 ? '1px' : '50%',
-              animation: `flowRightToLeft 5s linear infinite`,
-              animationDelay: `${-i * 0.33}s`,
-              left: '50%',
-            }}
-          />
-        ))}
-      </div>
-
-      {/* Cancel and confirm buttons - rounded squares */}
-      <div className="flex items-center gap-1" style={{ pointerEvents: 'auto' }}>
+      {/* Controls: Cancel (✕) and Finish (✓) */}
+      <div className="flex items-center gap-1.5 flex-shrink-0" style={{ pointerEvents: "auto" }}>
         <button
+          type="button"
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            console.log("Cancel button clicked");
             onCancel();
           }}
-          className="w-7 h-7 rounded flex items-center justify-center bg-[#4a4a4a] hover:bg-[#5a5a5a] text-white transition-colors cursor-pointer"
-          type="button"
+          className="w-7 h-7 rounded-md flex items-center justify-center bg-white/10 hover:bg-white/20 text-neutral-300 hover:text-white transition-colors cursor-pointer"
+          title="Cancel"
+          aria-label="Cancel"
         >
           <X className="w-4 h-4 pointer-events-none" />
         </button>
         <button
+          type="button"
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            console.log("Confirm button clicked");
             onConfirm();
           }}
-          className="w-7 h-7 rounded flex items-center justify-center bg-[#4a4a4a] hover:bg-[#5a5a5a] text-white transition-colors cursor-pointer"
-          type="button"
+          className="w-7 h-7 rounded-md flex items-center justify-center bg-white/10 hover:bg-white/20 text-neutral-300 hover:text-white transition-colors cursor-pointer"
+          title="Finish"
+          aria-label="Finish"
         >
           <Check className="w-4 h-4 pointer-events-none" />
         </button>
@@ -316,61 +284,23 @@ export function VoiceInputBar({
     </>
   );
 
-  const renderActiveState = () => (
-    <>
-      {/* Left side with transcript */}
-      <div className="flex items-center flex-1 min-w-0">
-        <span className="text-gray-400 text-sm italic truncate h-5 flex items-center">
-          {transcript || "Hey,"}
+  const renderProcessingState = () => (
+    <div className="flex items-center flex-1 min-w-0 h-full">
+      <span className="text-sm font-medium text-neutral-200 tracking-wide select-none">
+        Processing...
+      </span>
+    </div>
+  );
+
+  const renderErrorState = () => (
+    <div className="flex items-center justify-between w-full h-full text-red-400">
+      <div className="flex items-center gap-2 min-w-0">
+        <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+        <span className="text-sm font-medium truncate select-none">
+          {errorMessage || "Couldn't process voice"}
         </span>
       </div>
-
-      {/* Dots transformed into bars based on audio frequency, flowing right to left */}
-      <div className="flex items-center justify-center gap-[2px] overflow-hidden h-5 relative w-32">
-        {dotHeights.map((height, i) => (
-          <div
-            key={i}
-            className="absolute bg-gray-400"
-            style={{
-              width: '2px',
-              height: `${height}px`,
-              borderRadius: height > 4 ? '1px' : '50%',
-              animation: `flowRightToLeft 5s linear infinite`,
-              animationDelay: `${-i * 0.33}s`,
-              left: '50%',
-            }}
-          />
-        ))}
-      </div>
-
-      {/* Cancel and confirm buttons - rounded squares */}
-      <div className="flex items-center gap-1 flex-shrink-0" style={{ pointerEvents: 'auto' }}>
-        <button
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            console.log("Cancel button clicked (active)");
-            onCancel();
-          }}
-          className="w-7 h-7 rounded flex items-center justify-center bg-[#4a4a4a] hover:bg-[#5a5a5a] text-white transition-colors cursor-pointer"
-          type="button"
-        >
-          <X className="w-4 h-4 pointer-events-none" />
-        </button>
-        <button
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            console.log("Confirm button clicked (active)");
-            onConfirm();
-          }}
-          className="w-7 h-7 rounded flex items-center justify-center bg-[#4a4a4a] hover:bg-[#5a5a5a] text-white transition-colors cursor-pointer"
-          type="button"
-        >
-          <Check className="w-4 h-4 pointer-events-none" />
-        </button>
-      </div>
-    </>
+    </div>
   );
 
   return (
@@ -393,21 +323,23 @@ export function VoiceInputBar({
           }
         }
       `}</style>
-      <div
-        className={cn(
-          "flex items-center justify-between px-5 py-2 rounded-2xl",
-          "bg-[#1f1f1f] border border-[#363636]",
-          "transition-all duration-200",
-          "min-w-0",
-          "max-w-full",
-          "h-10",
-          className
-        )}
-        onPointerDown={(event) => event.stopPropagation()}
-      >
-        {effectiveState === "idle" && renderIdleState()}
-        {effectiveState === "listening" && renderListeningState()}
-        {effectiveState === "active" && renderActiveState()}
+      <div className={cn("relative", className)}>
+        <div
+          className={cn(
+            "flex items-center justify-between px-5 py-2 rounded-2xl",
+            "bg-[#1f1f1f] border border-[#363636]",
+            "transition-all duration-200",
+            "min-w-0",
+            "max-w-full",
+            "h-10",
+            activeUiState === "error" && "border-red-500/50 bg-[#251a1a]"
+          )}
+        >
+          {activeUiState === "idle" && renderIdleState()}
+          {activeUiState === "listening" && renderListeningState()}
+          {activeUiState === "processing" && renderProcessingState()}
+          {activeUiState === "error" && renderErrorState()}
+        </div>
       </div>
     </>
   );

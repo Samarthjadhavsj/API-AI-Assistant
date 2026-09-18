@@ -11,10 +11,12 @@ import {
 import { TransparentPopoverContent } from "@/components/ui/popover";
 import { UseCompletionReturn } from "@/types";
 import { MessageHistory } from "./MessageHistory";
-import { VoiceInputBar } from "./VoiceInputBar";
-import { useState, useEffect } from "react";
+import { VoiceInputBar, VoiceUiState } from "./VoiceInputBar";
+import { useState, useEffect, useRef } from "react";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { useApp } from "@/contexts";
+import { invoke } from "@tauri-apps/api/core";
+import { voiceErrorMessage } from "@/lib/voice/errors";
 
 export const Input = ({
   isPopoverOpen,
@@ -39,9 +41,10 @@ export const Input = ({
   setKeepEngaged,
   onVoiceStateChange,
 }: UseCompletionReturn & { isHidden: boolean; onVoiceStateChange?: (state: string) => void }) => {
-  const [voiceState, setVoiceState] = useState<"idle" | "listening" | "active">("idle");
+  const [voiceUiState, setVoiceUiState] = useState<VoiceUiState>("idle");
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const [voiceStream, setVoiceStream] = useState<MediaStream | null>(null);
+  const [voiceError, setVoiceError] = useState<string>("");
   const { selectedAudioDevices, selectedSttProvider } = useApp();
   const isProviderConfigured = Boolean(selectedSttProvider.variables.api_key?.trim());
 
@@ -55,67 +58,145 @@ export const Input = ({
     },
   });
 
+  const voiceRef = useRef(voice);
+  voiceRef.current = voice;
+  const voiceUiStateRef = useRef(voiceUiState);
+  voiceUiStateRef.current = voiceUiState;
+  const voiceActionRef = useRef<"idle" | "canceling" | "confirming">("idle");
+  const startPromiseRef = useRef<Promise<boolean> | null>(null);
+  const errorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearErrorTimer = () => {
+    if (errorTimeoutRef.current) {
+      clearTimeout(errorTimeoutRef.current);
+      errorTimeoutRef.current = null;
+    }
+  };
+
+  const triggerVoiceError = (message = "Couldn't process voice") => {
+    setVoiceError(message);
+    setVoiceUiState("error");
+    clearErrorTimer();
+    errorTimeoutRef.current = setTimeout(() => {
+      setVoiceUiState("idle");
+      setVoiceError("");
+    }, 2000);
+  };
+
   const handleMicClick = async () => {
+    if (voiceUiState === "processing" || voiceActionRef.current !== "idle") return;
+    clearErrorTimer();
+
     if (!isProviderConfigured) {
       console.warn("[VoiceInput] STT provider not configured");
+      triggerVoiceError("Voice input requires a Gemini API key. Add one in Settings → Voice Settings.");
       return;
     }
 
-    console.log("[VoiceInput] Mic clicked, current voiceState:", voiceState);
-
-    if (voiceState === "idle") {
-      console.log("[VoiceInput] Starting voice recording...");
-      setVoiceState("listening");
-      try {
-        await voice.start(selectedAudioDevices.input || undefined);
-        console.log("[VoiceInput] Voice recording started successfully");
-      } catch (error) {
-        console.error("[VoiceInput] Failed to start voice recording:", error);
-        setVoiceState("idle");
-        // Show error to user
-        const errorMessage = error instanceof Error ? error.message : "Failed to access microphone";
-        console.error("[VoiceInput] Microphone error:", errorMessage);
-        // You could add a toast notification here
-        alert(`Microphone error: ${errorMessage}. Please check your microphone permissions and try again.`);
-      }
-    } else {
-      console.log("[VoiceInput] Canceling voice recording...");
+    if (voiceUiState === "listening") {
       handleVoiceCancel();
+      return;
+    }
+
+    try {
+      await invoke("set_recording_state", { recording: true });
+    } catch (error) {
+      console.error("[VoiceInput] Failed to set recording state:", error);
+    }
+
+    setVoiceUiState("listening");
+
+    let startPromise: Promise<boolean> | null = null;
+    try {
+      startPromise = voice.start(selectedAudioDevices.input || undefined);
+      startPromiseRef.current = startPromise;
+      const startResult = await startPromise;
+      if (!startResult) {
+        throw new Error("Failed to start voice recording");
+      }
+    } catch (error) {
+      console.error("[VoiceInput] Failed to start voice recording:", error);
+      try {
+        await invoke("set_recording_state", { recording: false });
+      } catch (clearError) {
+        console.error("[VoiceInput] Failed to clear recording state:", clearError);
+      }
+      triggerVoiceError(voiceErrorMessage(error) || "Couldn't process voice");
+    } finally {
+      if (startPromiseRef.current === startPromise) {
+        startPromiseRef.current = null;
+      }
     }
   };
 
-  const handleVoiceCancel = () => {
-    console.log("[VoiceInput] Voice canceled");
-    voice.cancel();
-    setVoiceState("idle");
-    setVoiceTranscript("");
-    setVoiceStream(null);
+  const handleVoiceCancel = async () => {
+    if (voiceUiState === "processing" || voiceActionRef.current !== "idle") return;
+    voiceActionRef.current = "canceling";
+    clearErrorTimer();
+
+    try {
+      voiceRef.current.cancel();
+    } finally {
+      setVoiceUiState("idle");
+      setVoiceTranscript("");
+      setVoiceStream(null);
+      setVoiceError("");
+
+      try {
+        await invoke("set_recording_state", { recording: false });
+      } catch (error) {
+        console.error("[VoiceInput] Failed to clear recording state:", error);
+      } finally {
+        voiceActionRef.current = "idle";
+      }
+    }
   };
 
   const handleVoiceConfirm = async () => {
-    console.log("[VoiceInput] Voice confirmed, transcript:", voiceTranscript);
-    if (voiceTranscript) {
-      setInput(voiceTranscript);
-      // Focus the input after setting the transcript
-      setTimeout(() => {
-        inputRef.current?.focus();
-      }, 100);
-    }
-    console.log("[VoiceInput] Stopping voice recording...");
+    if (voiceActionRef.current !== "idle" || voiceUiState === "processing") return;
+    voiceActionRef.current = "confirming";
+    clearErrorTimer();
+
+    // Immediately stop accepting new audio input and transition to processing
+    setVoiceUiState("processing");
+
     try {
-      await voice.stop();
-      console.log("[VoiceInput] Voice recording stopped successfully");
+      const pendingStart = startPromiseRef.current;
+      if (voiceRef.current.state === "requestingPermission" && pendingStart) {
+        const started = await pendingStart;
+        if (!started) {
+          triggerVoiceError("Couldn't process voice");
+          return;
+        }
+      }
+
+      const result = await voiceRef.current.stop();
+      const transcript = result?.text.trim();
+      if (transcript) {
+        setInput(transcript);
+        setTimeout(() => {
+          inputRef.current?.focus();
+        }, 100);
+      }
+      setVoiceUiState("idle");
+      setVoiceTranscript("");
+      setVoiceStream(null);
     } catch (error) {
       console.error("[VoiceInput] Error stopping voice recording:", error);
+      triggerVoiceError(voiceErrorMessage(error) || "Couldn't process voice");
+    } finally {
+      try {
+        await invoke("set_recording_state", { recording: false });
+      } catch (clearError) {
+        console.error("[VoiceInput] Failed to clear recording state:", clearError);
+      } finally {
+        voiceActionRef.current = "idle";
+      }
     }
-    setVoiceState("idle");
-    setVoiceTranscript("");
-    setVoiceStream(null);
   };
 
-  // Update voice stream when recording
+  // Sync voice stream when recording
   useEffect(() => {
-    console.log("[VoiceInput] Voice state changed:", voice.state, "Stream:", !!voice.stream, voice.stream ? `(${voice.stream.getTracks().length} tracks)` : "");
     if (voice.state === "recording" && voice.stream) {
       setVoiceStream(voice.stream);
     } else {
@@ -123,41 +204,35 @@ export const Input = ({
     }
   }, [voice.state, voice.stream]);
 
-  // Auto-transition to active state when voice is detected
+  // Reset to idle when voice controller becomes idle externally, unless in processing or error
   useEffect(() => {
-    console.log("[VoiceInput] Checking transition: voiceState=", voiceState, "transcript=", voiceTranscript);
-    if (voiceState === "listening" && voiceTranscript) {
-      console.log("[VoiceInput] Transitioning to active state");
-      setVoiceState("active");
+    if (voice.state === "idle" && voiceUiState === "listening") {
+      setVoiceUiState("idle");
+      setVoiceTranscript("");
+      setVoiceStream(null);
     }
-  }, [voiceTranscript, voiceState]);
-
-  // Reset to idle when voice stops
-  useEffect(() => {
-    if (voice.state === "idle" && voiceState !== "idle") {
-      console.log("[VoiceInput] Voice controller is idle, resetting UI state");
-      setVoiceState("idle");
-    }
-  }, [voice.state, voiceState]);
+  }, [voice.state, voiceUiState]);
 
   // Notify parent of voice state changes
   useEffect(() => {
-    onVoiceStateChange?.(voiceState);
-  }, [voiceState, onVoiceStateChange]);
+    onVoiceStateChange?.(voiceUiState);
+  }, [voiceUiState, onVoiceStateChange]);
 
   // Cleanup on component unmount
   useEffect(() => {
     return () => {
-      console.log("[VoiceInput] Input component unmounting, cleaning up voice resources");
-      if (voiceState !== "idle") {
-        console.log("[VoiceInput] Active voice session on unmount, canceling");
-        voice.cancel();
+      clearErrorTimer();
+      const currentVoice = voiceRef.current;
+      if (voiceUiStateRef.current !== "idle" || currentVoice.state !== "idle") {
+        currentVoice.cancel();
+        invoke("set_recording_state", { recording: false }).catch((error) => {
+          console.error("[VoiceInput] Failed to clear recording state on unmount:", error);
+        });
       }
-      if (voiceStream) {
-        console.log("[VoiceInput] Cleaning up voice stream on unmount");
-        voiceStream.getTracks().forEach(track => {
+      if (currentVoice.stream) {
+        currentVoice.stream.getTracks().forEach((track) => {
           try {
-            if (track.readyState !== 'ended') {
+            if (track.readyState !== "ended") {
               track.stop();
             }
           } catch (error) {
@@ -166,7 +241,7 @@ export const Input = ({
         });
       }
     };
-  }, [voiceState, voiceStream, voice]);
+  }, []);
 
   return (
     <div className="relative flex-1">
@@ -181,21 +256,25 @@ export const Input = ({
         <PopoverTrigger asChild className="!border-none !bg-transparent">
           <div className="relative select-none flex items-center gap-2 w-full">
             <VoiceInputBar
-              state={voiceState}
+              state={voiceUiState}
+              uiState={voiceUiState}
               transcript={voiceTranscript}
               stream={voiceStream}
               onMicClick={handleMicClick}
               onCancel={handleVoiceCancel}
               onConfirm={handleVoiceConfirm}
+              isProcessing={voiceUiState === "processing"}
               className="flex-1"
               inputValue={input}
               onInputChange={setInput}
               inputRef={inputRef}
               onKeyPress={handleKeyPress}
               onPaste={handlePaste}
-              disabled={isLoading || isHidden}
+              disabled={isLoading || isHidden || voiceUiState === "processing"}
+              isProviderConfigured={isProviderConfigured}
+              errorMessage={voiceError}
             />
-            {!isLoading && voiceState === "idle" && (
+            {!isLoading && voiceUiState === "idle" && (
               <MessageHistory
                 conversationHistory={conversationHistory}
                 currentConversationId={currentConversationId}
@@ -204,7 +283,7 @@ export const Input = ({
                 setMessageHistoryOpen={setMessageHistoryOpen}
               />
             )}
-            {!isLoading && voiceState !== "idle" && (
+            {!isLoading && voiceUiState !== "idle" && (
               <div className="w-9 shrink-0" />
             )}
           </div>
@@ -228,9 +307,8 @@ export const Input = ({
             </div>
             <div className="flex items-center gap-2 select-none">
               <div className="flex flex-row items-center gap-2 mr-2">
-                <p className="text-[10px]">{`Toggle ${
-                  keepEngaged ? "AI response" : "conversation mode"
-                }`}</p>
+                <p className="text-[10px]">{`Toggle ${keepEngaged ? "AI response" : "conversation mode"
+                  }`}</p>
                 <span className="text-[10px] text-muted-foreground/60 px-1 py-0 rounded border border-input/50">
                   {navigator.platform.toLowerCase().includes("mac")
                     ? "⌘"
@@ -241,7 +319,6 @@ export const Input = ({
                   checked={keepEngaged}
                   onCheckedChange={(checked) => {
                     setKeepEngaged(checked);
-                    // Focus input after toggle
                     setTimeout(() => {
                       inputRef?.current?.focus();
                     }, 100);
@@ -256,7 +333,6 @@ export const Input = ({
                   if (isLoading) {
                     cancel();
                   } else if (keepEngaged) {
-                    // When keepEngaged is on, close everything and start new conversation
                     setKeepEngaged(false);
                     startNewConversation();
                   } else {
@@ -268,8 +344,8 @@ export const Input = ({
                   isLoading
                     ? "Cancel loading"
                     : keepEngaged
-                    ? "Close and start new conversation"
-                    : "Clear conversation"
+                      ? "Close and start new conversation"
+                      : "Clear conversation"
                 }
               >
                 <XIcon />
@@ -292,7 +368,6 @@ export const Input = ({
               )}
               {response && <Markdown>{response}</Markdown>}
 
-              {/* Conversation History - Separate scroll, no auto-scroll */}
               {keepEngaged && conversationHistory.length > 1 && (
                 <div className="space-y-3 pt-3">
                   {conversationHistory
@@ -304,11 +379,10 @@ export const Input = ({
                       return (
                         <div
                           key={message.id}
-                          className={`p-3 rounded-lg text-sm ${
-                            message.role === "user"
+                          className={`p-3 rounded-lg text-sm ${message.role === "user"
                               ? "border-l-4 border-primary"
                               : ""
-                          }`}
+                            }`}
                         >
                           <div className="flex items-center gap-2 mb-2">
                             <span className="text-xs font-medium text-muted-foreground uppercase">
