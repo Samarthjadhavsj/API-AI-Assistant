@@ -112,7 +112,7 @@ export interface UseCompletionReturn {
   onRemoveAllFiles: () => void;
 
   /** Ref for the input element */
-  inputRef: RefObject<HTMLInputElement | null>;
+  inputRef: RefObject<HTMLTextAreaElement | null>;
   /** Function to capture a screenshot */
   captureScreenshot: () => Promise<void>;
   /** Whether a screenshot is currently loading */
