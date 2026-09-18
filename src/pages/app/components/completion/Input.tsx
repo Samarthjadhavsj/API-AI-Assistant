@@ -291,9 +291,6 @@ export const Input = ({
                 setMessageHistoryOpen={setMessageHistoryOpen}
               />
             )}
-            {!isLoading && voiceUiState !== "idle" && (
-              <div className="w-9 shrink-0" />
-            )}
           </div>
         </PopoverTrigger>
 

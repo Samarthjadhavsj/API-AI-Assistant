@@ -52,6 +52,10 @@ export class GeminiLiveSttAdapter implements SttAdapter {
   private readonly model: string;
   private websocket: WebSocket | null = null;
   private currentTranscript = "";
+  /** Finalized segments accumulated for this session. */
+  private committedTranscript = "";
+  /** Current in-progress segment; replaced on each interim update. */
+  private interimTranscript = "";
   private resolveConnection: ((value: void) => void) | null = null;
   private rejectConnection: ((error: Error) => void) | null = null;
   private resolveTranscription: ((result: SttResult) => void) | null = null;
@@ -97,6 +101,18 @@ export class GeminiLiveSttAdapter implements SttAdapter {
         },
       },
     };
+  }
+
+  private resetTranscripts(): void {
+    this.currentTranscript = "";
+    this.committedTranscript = "";
+    this.interimTranscript = "";
+  }
+
+  private joinCommittedAndInterim(): string {
+    if (!this.committedTranscript) return this.interimTranscript;
+    if (!this.interimTranscript) return this.committedTranscript;
+    return `${this.committedTranscript} ${this.interimTranscript}`;
   }
 
   private arrayBufferToBase64(buffer: ArrayBuffer): string {
@@ -152,32 +168,39 @@ export class GeminiLiveSttAdapter implements SttAdapter {
       if (interimTranscription?.text !== undefined) {
         const transcript = interimTranscription.text;
         console.log("[GeminiLiveSttAdapter] Received interim transcript:", transcript);
-        this.currentTranscript = transcript;
-        this.onPartialCallback?.(transcript);
+        this.interimTranscript = transcript;
+        this.currentTranscript = this.joinCommittedAndInterim();
+        this.onPartialCallback?.(this.currentTranscript);
         // Interim transcriptions never resolve stop().
       }
 
       if (finalTranscription?.text !== undefined) {
-        const transcript = finalTranscription.text;
+        const transcript = finalTranscription.text.trim();
         console.log("[GeminiLiveSttAdapter] Received final transcript:", transcript);
-        this.currentTranscript = transcript;
-        this.hasFinalTranscript = true;
-        this.onPartialCallback?.(transcript);
+        if (transcript) {
+          this.committedTranscript = this.committedTranscript
+            ? `${this.committedTranscript} ${transcript}`
+            : transcript;
+          this.interimTranscript = "";
+          this.currentTranscript = this.committedTranscript;
+          this.hasFinalTranscript = true;
+          this.onPartialCallback?.(this.currentTranscript);
 
-        // Order A: audioStreamEnd already sent → resolve immediately.
-        // Order B: audioStreamEnd not yet sent → sendAudioStreamEnd() will resolve.
-        if (this.isStreamEnded && this.resolveTranscription) {
-          const resolve = this.resolveTranscription;
-          this.resolveTranscription = null;
-          this.rejectTranscription = null;
+          // Order A: audioStreamEnd already sent → resolve immediately.
+          // Order B: audioStreamEnd not yet sent → sendAudioStreamEnd() will resolve.
+          if (this.isStreamEnded && this.resolveTranscription) {
+            const resolve = this.resolveTranscription;
+            this.resolveTranscription = null;
+            this.rejectTranscription = null;
 
-          resolve({
-            text: transcript,
-            providerId: this.providerId,
-          });
+            resolve({
+              text: this.currentTranscript,
+              providerId: this.providerId,
+            });
 
-          // Close WebSocket after resolving (not before).
-          this.close();
+            // Close WebSocket after resolving (not before).
+            this.close();
+          }
         }
       }
     } catch (error) {
@@ -265,7 +288,7 @@ export class GeminiLiveSttAdapter implements SttAdapter {
 
     // Batch path: process audio normally
     this.onPartialCallback = onPartial || null;
-    this.currentTranscript = "";
+    this.resetTranscripts();
     this.isStreamEnded = false;
 
     // Create transcription promise
@@ -389,5 +412,6 @@ export class GeminiLiveSttAdapter implements SttAdapter {
     this.abortHandler = null;
     this.isStreamEnded = false;
     this.hasFinalTranscript = false;
+    this.resetTranscripts();
   }
 }

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { VoiceInputBar } from "./VoiceInputBar";
+import { VoiceInputBar, calculateVoiceWindowHeight } from "./VoiceInputBar";
 
 describe("VoiceInputBar workflow states", () => {
   it("renders IDLE state with a textarea and only mic button", () => {
@@ -53,11 +53,11 @@ describe("VoiceInputBar workflow states", () => {
     expect(onConfirm).toHaveBeenCalledOnce();
   });
 
-  it("grows the textarea to its content height and scrolls after the maximum height", async () => {
+  it("grows the textarea to its content height during listening and stays clamped to 20px in idle", async () => {
     const { rerender } = render(
       <VoiceInputBar
-        uiState="idle"
-        inputValue="short"
+        uiState="listening"
+        transcript="short"
         onMicClick={vi.fn()}
         onCancel={vi.fn()}
         onConfirm={vi.fn()}
@@ -72,8 +72,8 @@ describe("VoiceInputBar workflow states", () => {
 
     rerender(
       <VoiceInputBar
-        uiState="idle"
-        inputValue="A longer message"
+        uiState="listening"
+        transcript="A longer message"
         onMicClick={vi.fn()}
         onCancel={vi.fn()}
         onConfirm={vi.fn()}
@@ -86,8 +86,8 @@ describe("VoiceInputBar workflow states", () => {
     scrollHeight = 240;
     rerender(
       <VoiceInputBar
-        uiState="idle"
-        inputValue="An even longer message"
+        uiState="listening"
+        transcript="An even longer message"
         onMicClick={vi.fn()}
         onCancel={vi.fn()}
         onConfirm={vi.fn()}
@@ -96,6 +96,23 @@ describe("VoiceInputBar workflow states", () => {
 
     await waitFor(() => expect(textarea.style.height).toBe("160px"));
     expect(textarea.style.overflowY).toBe("auto");
+
+    // In idle state with confirmed text, textarea must remain clamped to 20px
+    rerender(
+      <VoiceInputBar
+        uiState="idle"
+        inputValue="A confirmed multi-line transcript"
+        onMicClick={vi.fn()}
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      const idleTextarea = screen.getByPlaceholderText("Write a message…") as HTMLTextAreaElement;
+      expect(idleTextarea.style.height).toBe("20px");
+      expect(idleTextarea.style.overflowY).toBe("hidden");
+    });
   });
 
   it("renders PROCESSING state with text and without any listening controls or mic button", () => {
@@ -130,5 +147,36 @@ describe("VoiceInputBar workflow states", () => {
     expect(screen.getByText("Couldn't process voice")).toBeInTheDocument();
     expect(screen.queryByTitle("Cancel")).not.toBeInTheDocument();
     expect(screen.queryByTitle("Finish")).not.toBeInTheDocument();
+  });
+
+  it("calculates window height properly bounded between 54px and 194px", () => {
+    expect(calculateVoiceWindowHeight(20)).toBe(54);
+    expect(calculateVoiceWindowHeight(10)).toBe(54); // below min
+    expect(calculateVoiceWindowHeight(40)).toBe(74); // 2 lines
+    expect(calculateVoiceWindowHeight(80)).toBe(114); // 4 lines
+    expect(calculateVoiceWindowHeight(160)).toBe(194); // max lines
+    expect(calculateVoiceWindowHeight(250)).toBe(194); // above max clamped
+  });
+
+  it("sets data-voice-listening attribute when in listening state", () => {
+    const { container, rerender } = render(
+      <VoiceInputBar
+        uiState="listening"
+        onMicClick={vi.fn()}
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+      />
+    );
+    expect(container.querySelector('[data-voice-listening="true"]')).toBeInTheDocument();
+
+    rerender(
+      <VoiceInputBar
+        uiState="idle"
+        onMicClick={vi.fn()}
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+      />
+    );
+    expect(container.querySelector('[data-voice-listening="true"]')).not.toBeInTheDocument();
   });
 });

@@ -10,12 +10,38 @@ const isAnyPopoverOpen = (): boolean => {
   return popoverContents.length > 0;
 };
 
+// Helper function to check if live voice listening is active
+export const isVoiceListeningActive = (): boolean => {
+  return document.querySelector('[data-voice-listening="true"]') !== null;
+};
+
+// Directly set native window height with safety checks
+export const setNativeWindowHeight = async (height: number) => {
+  try {
+    const window = getCurrentWebviewWindow();
+    await invoke("set_window_height", {
+      window,
+      height: Math.round(height),
+    });
+  } catch (error) {
+    console.error("Failed to set window height:", error);
+  }
+};
+
 export const useWindowResize = () => {
-  const resizeWindow = useCallback(async (expanded: boolean) => {
+  const resizeWindow = useCallback(async (expanded: boolean | number) => {
     try {
       const window = getCurrentWebviewWindow();
 
-      if (!expanded && isAnyPopoverOpen()) {
+      if (typeof expanded === "number") {
+        await invoke("set_window_height", {
+          window,
+          height: Math.round(expanded),
+        });
+        return;
+      }
+
+      if (!expanded && (isAnyPopoverOpen() || isVoiceListeningActive())) {
         return;
       }
 
@@ -48,7 +74,7 @@ export const useWindowResize = () => {
         isDragging = false;
 
         setTimeout(() => {
-          if (!isAnyPopoverOpen()) {
+          if (!isAnyPopoverOpen() && !isVoiceListeningActive()) {
             resizeWindow(false);
           }
         }, 100);
@@ -56,7 +82,7 @@ export const useWindowResize = () => {
     };
 
     const observer = new MutationObserver(() => {
-      if (!isAnyPopoverOpen()) {
+      if (!isAnyPopoverOpen() && !isVoiceListeningActive()) {
         resizeWindow(false);
       }
     });
@@ -66,7 +92,7 @@ export const useWindowResize = () => {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ["data-state"],
+      attributeFilter: ["data-state", "data-voice-listening"],
     });
 
     document.addEventListener("mousedown", handleMouseDown);
@@ -79,7 +105,7 @@ export const useWindowResize = () => {
     };
   }, [resizeWindow]);
 
-  return { resizeWindow };
+  return { resizeWindow, setWindowHeight: setNativeWindowHeight };
 };
 
 interface UseWindowFocusOptions {

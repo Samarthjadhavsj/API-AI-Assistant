@@ -42,11 +42,11 @@ const App = () => {
       }}
     >
       <div
-        className="w-screen h-screen flex overflow-hidden justify-center items-center"
+        className="w-screen h-screen flex overflow-hidden justify-center items-start pt-[2px]"
       >
-        <Card className="w-full flex flex-row items-center gap-2 py-1 px-3">
+        <Card className="w-full flex flex-row items-start gap-2 py-1 px-3">
           {/* App Icon on the left */}
-          <div className="shrink-0" data-tauri-drag-region={false}>
+          <div className="shrink-0 mt-0.5" data-tauri-drag-region={false}>
             <img 
               src="/icon.png" 
               alt="Hey Frank" 
@@ -55,10 +55,10 @@ const App = () => {
             />
           </div>
           
-          <div className="w-full flex flex-row gap-2 items-center">
+          <div className="w-full flex flex-row gap-2 items-start">
             <Completion isHidden={isHidden} onVoiceStateChange={setVoiceState} />
             {voiceState === "idle" && (
-              <div className="flex gap-2 relative z-50" style={{ pointerEvents: 'auto' }} data-tauri-drag-region={false}>
+              <div className="flex gap-2 relative z-50 mt-1" style={{ pointerEvents: 'auto' }} data-tauri-drag-region={false}>
                 <Button
                   size={"icon"}
                   variant={"ghost"}
@@ -83,7 +83,9 @@ const App = () => {
             )}
           </div>
 
-          <DragButton />
+          <div className="shrink-0 mt-1">
+            <DragButton />
+          </div>
         </Card>
         {customizable.cursor.type === "invisible" && platform !== "linux" ? (
           <CustomCursor />
