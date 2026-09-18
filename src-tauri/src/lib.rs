@@ -86,7 +86,10 @@ fn resize_main_window(app: tauri::AppHandle, width: f64, height: f64) -> Result<
 #[tauri::command]
 fn set_recording_state(recording: bool) {
     IS_RECORDING.store(recording, Ordering::SeqCst);
-    eprintln!("[RECORDING_STATE] Voice recording state set to: {}", recording);
+    eprintln!(
+        "[RECORDING_STATE] Voice recording state set to: {}",
+        recording
+    );
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
