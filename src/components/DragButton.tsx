@@ -6,7 +6,7 @@ export const DragButton = () => {
     <Button
       variant="ghost"
       size="icon"
-      className={`-ml-[2px] w-fit`}
+      className={`-ml-[2px] h-8 w-fit`}
       data-tauri-drag-region
     >
       <GripVerticalIcon className="h-4 w-4" />

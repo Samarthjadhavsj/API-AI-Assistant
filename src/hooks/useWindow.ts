@@ -2,8 +2,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { useCallback, useEffect } from "react";
 
+/** Height of the main window while a popover (response, history, files) is open. */
+export const EXPANDED_WINDOW_HEIGHT = 600;
+
 // Helper function to check if any popover is open in the DOM
-const isAnyPopoverOpen = (): boolean => {
+export const isAnyPopoverOpen = (): boolean => {
   const popoverContents = document.querySelectorAll(
     "[data-radix-popper-content-wrapper]"
   );
@@ -45,7 +48,7 @@ export const useWindowResize = () => {
         return;
       }
 
-      const newHeight = expanded ? 600 : 54;
+      const newHeight = expanded ? EXPANDED_WINDOW_HEIGHT : 54;
 
       await invoke("set_window_height", {
         window,

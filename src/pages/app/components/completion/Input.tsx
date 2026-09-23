@@ -286,7 +286,7 @@ export const Input = ({
         <PopoverAnchor asChild>
           <div
             ref={inputBarRef}
-            className="relative select-none flex items-center gap-2 w-full !border-none !bg-transparent"
+            className="relative select-none flex items-start gap-2 w-full !border-none !bg-transparent"
           >
             <VoiceInputBar
               state={voiceUiState}
@@ -297,7 +297,7 @@ export const Input = ({
               onCancel={handleVoiceCancel}
               onConfirm={handleVoiceConfirm}
               isProcessing={voiceUiState === "processing"}
-              className="flex-1"
+              className="flex-1 mt-0.5"
               inputValue={input}
               onInputChange={setInput}
               inputRef={inputRef}

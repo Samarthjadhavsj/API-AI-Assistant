@@ -18,7 +18,7 @@ export const Screenshot = ({
   return (
     <Button
       size="icon"
-      className="cursor-pointer"
+      className="mt-1 size-8 shrink-0 cursor-pointer"
       title={`${captureMode} mode (${processingMode}) - ${attachedFiles.length}/${MAX_FILES} files`}
       onClick={captureScreenshot}
       disabled={
