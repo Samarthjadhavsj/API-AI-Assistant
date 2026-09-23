@@ -27,7 +27,7 @@ export const Files = ({
   const canAddMore = attachedFiles.length < MAX_FILES;
 
   return (
-    <div className="relative">
+    <div className="relative mt-1 shrink-0">
       <Popover open={isFilesPopoverOpen} onOpenChange={setIsFilesPopoverOpen}>
         <PopoverTrigger asChild>
           <Button
@@ -42,7 +42,7 @@ export const Files = ({
               }
             }}
             disabled={isLoading}
-            className="cursor-pointer"
+            className="size-8 cursor-pointer"
             title="Attach images"
             data-tauri-drag-region={false}
           >

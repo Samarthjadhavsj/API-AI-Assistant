@@ -155,12 +155,12 @@ export const MessageHistory = ({
   const showLoading = isLoading && conversations.length === 0;
 
   return (
-    <div className="relative">
+    <div className="relative mt-1 shrink-0">
       <Popover open={messageHistoryOpen} onOpenChange={setMessageHistoryOpen}>
         <PopoverTrigger asChild>
           <Button
             size="icon"
-            className="cursor-pointer"
+            className="size-8 cursor-pointer"
             aria-label="View Conversations"
             title="View Conversations"
             data-tauri-drag-region={false}

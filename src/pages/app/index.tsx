@@ -44,13 +44,13 @@ const App = () => {
       <div
         className="w-screen h-screen flex overflow-hidden justify-center items-start pt-[2px]"
       >
-        <Card className="w-full flex flex-row items-start gap-2 py-1 px-3">
+        <Card className="w-full min-h-[52px] flex flex-row items-start gap-2 py-1 px-3">
           {/* App Icon on the left */}
-          <div className="shrink-0 mt-0.5" data-tauri-drag-region={false}>
+          <div className="shrink-0 mt-1" data-tauri-drag-region={false}>
             <img 
               src="/icon.png" 
               alt="Hey Frank" 
-              className="h-9 w-9 rounded-md object-contain"
+              className="h-8 w-8 rounded-md object-contain"
               draggable={false}
             />
           </div>
