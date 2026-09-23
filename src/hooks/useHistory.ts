@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   getAllConversations,
   deleteConversation,
+  deleteAllConversations,
   DOWNLOAD_SUCCESS_DISPLAY_MS,
 } from "@/lib";
 import { ChatConversation } from "@/types/completion";
@@ -15,6 +16,8 @@ export interface UseHistoryReturn {
   viewingConversation: ChatConversation | null;
   downloadedConversations: Set<string>;
   deleteConfirm: string | null;
+  deleteAllConfirm: boolean;
+  isDeleting: boolean;
   isDownloaded: boolean;
   isAttached: boolean;
 
@@ -25,8 +28,11 @@ export interface UseHistoryReturn {
     e: React.MouseEvent
   ) => void;
   handleDeleteConfirm: (conversationId: string) => void;
-  confirmDelete: () => void;
+  confirmDelete: () => Promise<void>;
   cancelDelete: () => void;
+  handleDeleteAllConfirm: () => void;
+  confirmDeleteAll: () => Promise<void>;
+  cancelDeleteAll: () => void;
   handleAttachToOverlay: (conversationId: string) => void;
   handleDownload: (
     conversation: ChatConversation | null,
@@ -39,8 +45,21 @@ export interface UseHistoryReturn {
   isLoading: boolean;
 }
 
-export function useHistory(): UseHistoryReturn {
-  const [isLoading, setIsLoading] = useState(false);
+export interface UseHistoryOptions {
+  /**
+   * Load conversations on mount (default). Surfaces that stay mounted but are
+   * rarely shown, like the overlay's history popover, pass `false` and call
+   * `refreshConversations` when they open.
+   */
+  autoLoad?: boolean;
+}
+
+export function useHistory({
+  autoLoad = true,
+}: UseHistoryOptions = {}): UseHistoryReturn {
+  // Starts true when auto-loading so consumers don't flash an empty state
+  // before the first load
+  const [isLoading, setIsLoading] = useState(autoLoad);
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [search, setSearch] = useState("");
   const [selectedConversationId, setSelectedConversationId] = useState<
@@ -54,6 +73,10 @@ export function useHistory(): UseHistoryReturn {
   >(new Set());
 
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [deleteAllConfirm, setDeleteAllConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  // Ref guard so a second delete can't start before React re-renders
+  const isDeletingRef = useRef(false);
   const [isDownloaded, setIsDownloaded] = useState(false);
   const [isAttached, setIsAttached] = useState(false);
 
@@ -71,10 +94,10 @@ export function useHistory(): UseHistoryReturn {
     }
   }, []);
 
-  // Load conversations when component mounts or popover opens
+  // Load conversations when the component mounts (unless the caller opts out)
   useEffect(() => {
-    refreshConversations();
-  }, [refreshConversations]);
+    if (autoLoad) refreshConversations();
+  }, [autoLoad, refreshConversations]);
 
   const handleViewConversation = (conversation: ChatConversation) => {
     setViewingConversation(conversation);
@@ -129,8 +152,10 @@ export function useHistory(): UseHistoryReturn {
   };
 
   const confirmDelete = async () => {
-    if (!deleteConfirm) return;
+    if (!deleteConfirm || isDeletingRef.current) return;
 
+    isDeletingRef.current = true;
+    setIsDeleting(true);
     try {
       setSelectedConversationId(null);
       setViewingConversation(null);
@@ -146,12 +171,44 @@ export function useHistory(): UseHistoryReturn {
     } catch (error) {
       console.error("Failed to delete conversation:", error);
     } finally {
+      isDeletingRef.current = false;
+      setIsDeleting(false);
       setDeleteConfirm(null);
     }
   };
 
   const cancelDelete = () => {
     setDeleteConfirm(null);
+  };
+
+  const handleDeleteAllConfirm = () => {
+    setDeleteAllConfirm(true);
+  };
+
+  const confirmDeleteAll = async () => {
+    if (isDeletingRef.current) return;
+
+    isDeletingRef.current = true;
+    setIsDeleting(true);
+    try {
+      setSelectedConversationId(null);
+      setViewingConversation(null);
+      await deleteAllConversations();
+      setConversations([]);
+
+      // Lets an active conversation in the main input reset itself
+      window.dispatchEvent(new CustomEvent("conversationsCleared"));
+    } catch (error) {
+      console.error("Failed to delete all conversations:", error);
+    } finally {
+      isDeletingRef.current = false;
+      setIsDeleting(false);
+      setDeleteAllConfirm(false);
+    }
+  };
+
+  const cancelDeleteAll = () => {
+    setDeleteAllConfirm(false);
   };
 
   const handleAttachToOverlay = (conversationId: string) => {
@@ -216,6 +273,8 @@ export function useHistory(): UseHistoryReturn {
     viewingConversation,
     downloadedConversations,
     deleteConfirm,
+    deleteAllConfirm,
+    isDeleting,
     isDownloaded,
     isAttached,
 
@@ -225,6 +284,9 @@ export function useHistory(): UseHistoryReturn {
     handleDeleteConfirm,
     confirmDelete,
     cancelDelete,
+    handleDeleteAllConfirm,
+    confirmDeleteAll,
+    cancelDeleteAll,
     handleAttachToOverlay,
     handleDownload,
     // Utilities

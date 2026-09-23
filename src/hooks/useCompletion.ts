@@ -493,6 +493,12 @@ export const useCompletion = () => {
       }
     };
 
+    const handleConversationsCleared = () => {
+      if (state.currentConversationId) {
+        startNewConversation();
+      }
+    };
+
     const handleStorageChange = async (e: StorageEvent) => {
       if (e.key === "hey-frank-conversation-selected" && e.newValue) {
         try {
@@ -513,6 +519,7 @@ export const useCompletion = () => {
     window.addEventListener("conversationSelected", handleConversationSelected);
     window.addEventListener("newConversation", handleNewConversation);
     window.addEventListener("conversationDeleted", handleConversationDeleted);
+    window.addEventListener("conversationsCleared", handleConversationsCleared);
     window.addEventListener("storage", handleStorageChange);
 
     return () => {
@@ -524,6 +531,10 @@ export const useCompletion = () => {
       window.removeEventListener(
         "conversationDeleted",
         handleConversationDeleted
+      );
+      window.removeEventListener(
+        "conversationsCleared",
+        handleConversationsCleared
       );
       window.removeEventListener("storage", handleStorageChange);
     };

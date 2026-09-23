@@ -12,6 +12,7 @@ const mocked = vi.hoisted(() => ({
 vi.mock("@/components", () => ({
   Popover: ({ children }: any) => <>{children}</>,
   PopoverTrigger: ({ children }: any) => <>{children}</>,
+  PopoverAnchor: ({ children }: any) => <>{children}</>,
   Button: ({ children }: any) => <button>{children}</button>,
   ScrollArea: ({ children }: any) => <>{children}</>,
   Markdown: ({ children }: any) => <>{children}</>,

@@ -1,17 +1,27 @@
-import { MessageSquareText, ChevronUp, ArrowLeft, History } from "lucide-react";
-import {
-  Popover,
-  PopoverTrigger,
-  Button,
-  ScrollArea,
-  Markdown,
-  Badge,
-} from "@/components";
+import { ChevronLeft, MessageSquareText, Trash2, XIcon } from "lucide-react";
+import { Popover, PopoverTrigger, Button, ScrollArea } from "@/components";
 import { TransparentPopoverContent } from "@/components/ui/popover";
-import { ChatMessage, ChatConversation } from "@/types/completion";
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { getAllConversations, getConversationById } from "@/lib/database/chat-history.action";
-import moment from "moment";
+import { ChatMessage } from "@/types/completion";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
+import { useHistory } from "@/hooks/useHistory";
+import { DeleteConfirmationDialog } from "@/pages/chats/components/DeleteConfirmation";
+import { ConversationRow } from "@/pages/app/components/message-history/ConversationRow";
+import { ConversationTranscript } from "@/pages/app/components/message-history/ConversationTranscript";
+import {
+  HistoryEmpty,
+  HistoryLoading,
+} from "@/pages/app/components/message-history/HistoryStates";
+import {
+  displayTitle,
+  pluralize,
+} from "@/pages/app/components/message-history/message-history.utils";
 
 interface MessageHistoryProps {
   conversationHistory: ChatMessage[];
@@ -21,6 +31,16 @@ interface MessageHistoryProps {
   setMessageHistoryOpen: (open: boolean) => void;
 }
 
+const iconButton =
+  "size-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground";
+
+/**
+ * Overlay conversation browser: Recent Conversations → a conversation's Q&A.
+ * Back and Close are explicit state transitions (no browser history), and none
+ * of this touches the main input's response state unless the user chooses
+ * "Continue chat". Full management (Delete All, routes) stays in
+ * Toggle Settings → Message History; both read the same `useHistory` data.
+ */
 export const MessageHistory = ({
   conversationHistory,
   currentConversationId,
@@ -28,101 +48,111 @@ export const MessageHistory = ({
   messageHistoryOpen,
   setMessageHistoryOpen,
 }: MessageHistoryProps) => {
-  const [allConversations, setAllConversations] = useState<ChatConversation[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [viewMode, setViewMode] = useState<"list" | "conversation">("list");
-  const [selectedConversation, setSelectedConversation] = useState<ChatConversation | null>(null);
+  // Stays mounted with the overlay, so load when opened rather than on mount.
+  const {
+    conversations,
+    isLoading,
+    refreshConversations,
+    deleteConfirm,
+    handleDeleteConfirm,
+    confirmDelete,
+    cancelDelete,
+    isDeleting,
+  } = useHistory({ autoLoad: false });
+  const [openConversationId, setOpenConversationId] = useState<string | null>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  const backButtonRef = useRef<HTMLButtonElement>(null);
+  // Row to refocus when returning from a conversation to the list
+  const returnFocusIdRef = useRef<string | null>(null);
 
-  // Load all conversations when popover opens
+  // Every open starts at Recent Conversations with fresh data.
   useEffect(() => {
     if (messageHistoryOpen) {
-      loadAllConversations();
-      // If currently in a conversation, show it
-      if (currentConversationId && conversationHistory.length > 0) {
-        setViewMode("conversation");
-        loadCurrentConversation();
-      } else {
-        setViewMode("list");
-      }
+      setOpenConversationId(null);
+      returnFocusIdRef.current = null;
+      refreshConversations();
     }
-  }, [messageHistoryOpen]);
+  }, [messageHistoryOpen, refreshConversations]);
 
-  const loadCurrentConversation = useCallback(async () => {
-    if (currentConversationId) {
-      try {
-        const conv = await getConversationById(currentConversationId);
-        if (conv) {
-          setSelectedConversation(conv);
-        }
-      } catch (error) {
-        console.error("Failed to load current conversation:", error);
-      }
+  const recentConversations = useMemo(
+    () => [...conversations].sort((a, b) => b.updatedAt - a.updatedAt),
+    [conversations]
+  );
+  const openConversation = openConversationId
+    ? conversations.find((c) => c.id === openConversationId) ?? null
+    : null;
+
+  // Keep keyboard focus where the user expects it after switching views.
+  useEffect(() => {
+    if (!messageHistoryOpen) return;
+    if (openConversation) {
+      backButtonRef.current?.focus();
+    } else if (returnFocusIdRef.current) {
+      listRef.current
+        ?.querySelector<HTMLButtonElement>(
+          `[data-conversation-id="${returnFocusIdRef.current}"] [data-conversation-row]`
+        )
+        ?.focus();
+      returnFocusIdRef.current = null;
     }
-  }, [currentConversationId]);
+  }, [messageHistoryOpen, openConversation]);
 
-  const loadAllConversations = useCallback(async () => {
-    // Prevent multiple simultaneous loads
-    if (isLoading) return;
-    
-    try {
-      setIsLoading(true);
-      const conversations = await getAllConversations();
-      setAllConversations(conversations);
-    } catch (error) {
-      console.error("Failed to load conversations:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [isLoading]);
+  const showList = useCallback(() => {
+    returnFocusIdRef.current = openConversationId;
+    setOpenConversationId(null);
+  }, [openConversationId]);
 
-  const handleSelectConversation = useCallback(async (conversation: ChatConversation) => {
-    // Immediate UI feedback
-    setSelectedConversation(conversation);
-    setViewMode("conversation");
-    
-    // Close popover immediately for better UX
-    setMessageHistoryOpen(false);
-    
-    // Dispatch event to load this conversation in the main app
-    // Use setTimeout to ensure popover closes first
-    setTimeout(() => {
-      window.dispatchEvent(
-        new CustomEvent("conversationSelected", {
-          detail: { id: conversation.id },
-        })
-      );
-    }, 50);
-  }, [setMessageHistoryOpen]);
-
-  const handleBackToList = useCallback(() => {
-    setViewMode("list");
-    setSelectedConversation(null);
-  }, []);
+  const close = useCallback(() => setMessageHistoryOpen(false), [setMessageHistoryOpen]);
 
   const handleNewChat = useCallback(() => {
     onStartNewConversation();
-    setViewMode("list");
-    setSelectedConversation(null);
-    setMessageHistoryOpen(false);
-  }, [onStartNewConversation, setMessageHistoryOpen]);
+    close();
+  }, [onStartNewConversation, close]);
 
-  const isInActiveConversation = useMemo(
-    () => currentConversationId !== null && conversationHistory.length > 0,
-    [currentConversationId, conversationHistory.length]
+  // Resume in the main input via the existing conversationSelected workflow.
+  const handleContinue = useCallback(
+    (conversationId: string) => {
+      close();
+      // Let the popover close before the main input loads the conversation
+      setTimeout(() => {
+        window.dispatchEvent(
+          new CustomEvent("conversationSelected", { detail: { id: conversationId } })
+        );
+      }, 50);
+    },
+    [close]
   );
 
-  const sortedMessages = useMemo(() => {
-    const messages = selectedConversation?.messages || conversationHistory;
-    return messages.slice().sort((a, b) => a.timestamp - b.timestamp);
-  }, [selectedConversation, conversationHistory]);
+  const handleConfirmDelete = useCallback(async () => {
+    const deletingOpenConversation = deleteConfirm === openConversationId;
+    await confirmDelete();
+    if (deletingOpenConversation) setOpenConversationId(null);
+  }, [confirmDelete, deleteConfirm, openConversationId]);
 
-  const filteredConversations = useMemo(() => {
-    return allConversations.filter(conv => conv.id !== currentConversationId);
-  }, [allConversations, currentConversationId]);
+  // Up/Down move between rows; Enter/Space activate the focused row button.
+  const handleListKeyDown = (event: KeyboardEvent<HTMLUListElement>) => {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    const rows = Array.from(
+      listRef.current?.querySelectorAll<HTMLButtonElement>("[data-conversation-row]") ?? []
+    );
+    const index = rows.indexOf(document.activeElement as HTMLButtonElement);
+    const next =
+      event.key === "ArrowDown"
+        ? rows[Math.min(index + 1, rows.length - 1)]
+        : rows[Math.max(index - 1, 0)];
+    if (next) {
+      event.preventDefault();
+      next.focus();
+    }
+  };
 
-  const conversationCount = isInActiveConversation
+  const isActiveConversation =
+    currentConversationId !== null && conversationHistory.length > 0;
+  const conversationCount = isActiveConversation
     ? conversationHistory.length
-    : allConversations.length;
+    : conversations.length;
+  const pendingDelete = conversations.find((c) => c.id === deleteConfirm);
+  const showLoading = isLoading && conversations.length === 0;
 
   return (
     <div className="relative">
@@ -147,198 +177,147 @@ export const MessageHistory = ({
         )}
 
         <TransparentPopoverContent
-        align="end"
-        side="bottom"
-        className="select-none w-screen p-0 mt-3 border overflow-hidden border-input/50"
-      >
-        {/* Header */}
-        <div className="border-b border-input/50 p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {/* Back button when viewing a conversation */}
-              {viewMode === "conversation" && (
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={handleBackToList}
-                  className="h-8 w-8"
-                  title="Back to conversations list"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                </Button>
-              )}
-              
-              <div className="flex flex-col">
-                {viewMode === "list" ? (
-                  <>
-                    <div className="flex items-center gap-2">
-                      <History className="h-4 w-4 text-primary" />
-                      <h2 className="text-base font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
-                        Conversation History
-                      </h2>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {allConversations.length} total conversation{allConversations.length !== 1 ? "s" : ""}
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <h2 className="text-base font-bold line-clamp-1">
-                      {selectedConversation?.title || "Conversation"}
-                    </h2>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <Badge variant="outline" className="text-xs px-1.5 py-0">
-                        {selectedConversation?.messages.length || conversationHistory.length} messages
-                      </Badge>
-                      <span className="text-xs text-muted-foreground">
-                        {selectedConversation 
-                          ? moment(selectedConversation.updatedAt).format("MMM D, YYYY • h:mm A")
-                          : ""}
-                      </span>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-2">
-              {/* New Chat button */}
+          align="end"
+          side="bottom"
+          className="select-none w-screen p-0 mt-3 overflow-hidden rounded-2xl border border-input/40"
+          aria-label={openConversation ? "Conversation" : "Recent Conversations"}
+        >
+          {openConversation ? (
+            <header className="flex items-center gap-1 border-b border-border/40 px-2 py-2">
               <Button
+                aria-label="Back to Recent Conversations"
+                className={iconButton}
+                onClick={showList}
+                ref={backButtonRef}
+                size="icon"
+                title="Back"
+                variant="ghost"
+              >
+                <ChevronLeft className="size-5" />
+              </Button>
+              <div className="min-w-0 flex-1 px-1">
+                <h2 className="truncate text-[15px] font-semibold tracking-tight">
+                  {displayTitle(openConversation.title)}
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  {pluralize(openConversation.messages.length, "message")}
+                </p>
+              </div>
+              <Button
+                className="h-8 shrink-0 rounded-full px-3 text-xs"
+                onClick={() => handleContinue(openConversation.id)}
                 size="sm"
+                variant="secondary"
+              >
+                Continue chat
+              </Button>
+              <Button
+                aria-label={`Delete conversation ${displayTitle(openConversation.title)}`}
+                className={`${iconButton} hover:text-destructive`}
+                disabled={isDeleting}
+                onClick={() => handleDeleteConfirm(openConversation.id)}
+                size="icon"
+                title="Delete conversation"
+                variant="ghost"
+              >
+                <Trash2 className="size-4" />
+              </Button>
+              <Button
+                aria-label="Close Message History"
+                className={iconButton}
+                onClick={close}
+                size="icon"
+                title="Close"
+                variant="ghost"
+              >
+                <XIcon className="size-4" />
+              </Button>
+            </header>
+          ) : (
+            <header className="flex items-center gap-2 border-b border-border/40 py-2.5 pl-4 pr-2">
+              <div className="min-w-0 flex-1">
+                <h2 className="truncate text-[15px] font-semibold tracking-tight">
+                  Recent Conversations
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  {showLoading ? "Loading…" : pluralize(conversations.length, "conversation")}
+                </p>
+              </div>
+              <Button
+                className="h-8 shrink-0 rounded-full px-3 text-xs"
                 onClick={handleNewChat}
-                className="text-xs h-8"
-                variant={viewMode === "list" ? "default" : "outline"}
+                size="sm"
+                variant="secondary"
               >
                 + New Chat
               </Button>
-              
-              {/* Close button */}
               <Button
+                aria-label="Close Message History"
+                className={iconButton}
+                onClick={close}
                 size="icon"
+                title="Close"
                 variant="ghost"
-                onClick={() => setMessageHistoryOpen(false)}
-                className="h-8 w-8"
               >
-                <ChevronUp className="h-4 w-4" />
+                <XIcon className="size-4" />
               </Button>
-            </div>
-          </div>
-        </div>
-
-        {/* Content Area */}
-        <ScrollArea className="h-[calc(100vh-10rem)]">
-          {isLoading ? (
-            <div className="p-4 text-center text-muted-foreground">
-              <div className="animate-pulse">Loading conversations...</div>
-            </div>
-          ) : viewMode === "conversation" ? (
-            // Show selected conversation messages
-            <div className="p-4 space-y-4">
-              {sortedMessages.map((message, index) => (
-                  <div
-                    key={message.id || index}
-                    className={`p-3 rounded-lg transition-all ${
-                      message.role === "user"
-                        ? "bg-primary/5 border-l-4 border-primary ml-2"
-                        : "bg-accent/30 mr-2"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className={`text-xs font-semibold uppercase ${
-                        message.role === "user" ? "text-primary" : "text-foreground/80"
-                      }`}>
-                        {message.role === "user" ? "You" : "AI"}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {new Date(message.timestamp).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </span>
-                    </div>
-                    <div className="text-sm">
-                      <Markdown>{message.content}</Markdown>
-                    </div>
-                  </div>
-                ))}
-            </div>
-          ) : (
-            // Show all conversations list
-            <div className="p-4 space-y-2">
-              {allConversations.length === 0 ? (
-                <div className="text-center text-muted-foreground py-12">
-                  <History className="h-12 w-12 mx-auto mb-3 opacity-20" />
-                  <p className="font-medium">No conversations yet</p>
-                  <p className="text-xs mt-1">Start chatting to create your first conversation!</p>
-                </div>
-              ) : (
-                <>
-                  {/* Current/Active conversation indicator */}
-                  {isInActiveConversation && (
-                    <div className="mb-3 pb-3 border-b border-input/30">
-                      <p className="text-xs font-semibold text-primary mb-2 flex items-center gap-1">
-                        <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-                        ACTIVE CONVERSATION
-                      </p>
-                      <div
-                        onClick={() => {
-                          if (currentConversationId) {
-                            const conv = allConversations.find(c => c.id === currentConversationId);
-                            if (conv) handleSelectConversation(conv);
-                          }
-                        }}
-                        className="p-3 rounded-lg border-2 border-primary/50 bg-primary/5 hover:bg-primary/10 cursor-pointer transition-all"
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <p className="text-sm font-semibold line-clamp-1">
-                            {allConversations.find(c => c.id === currentConversationId)?.title || "Current Chat"}
-                          </p>
-                          <Badge variant="default" className="text-xs">
-                            {conversationHistory.length}
-                          </Badge>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          Click to view full conversation
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* All other conversations */}
-                  <p className="text-xs font-semibold text-muted-foreground mb-2 mt-2">
-                    ALL CONVERSATIONS
-                  </p>
-                  {filteredConversations.map((conv) => (
-                      <div
-                        key={conv.id}
-                        onClick={() => handleSelectConversation(conv)}
-                        className="p-3 rounded-lg border border-input/50 hover:border-primary/50 hover:bg-accent/50 cursor-pointer transition-all group"
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <p className="text-sm font-medium line-clamp-1 group-hover:text-primary transition-colors">
-                            {conv.title}
-                          </p>
-                          <span className="text-xs text-muted-foreground">
-                            {moment(conv.updatedAt).fromNow()}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <p className="text-xs text-muted-foreground">
-                            {conv.messages.length} message{conv.messages.length !== 1 ? "s" : ""}
-                          </p>
-                          <span className="text-xs text-muted-foreground">
-                            {moment(conv.updatedAt).format("MMM D, YYYY")}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                </>
-              )}
-            </div>
+            </header>
           )}
-        </ScrollArea>
-      </TransparentPopoverContent>
-    </Popover>
-  </div>
-);
+
+          {/* Radix ScrollArea wraps content in a display:table div that grows
+              to the widest child; make it a block so everything wraps/truncates
+              within the 600px window instead of scrolling sideways. */}
+          <ScrollArea className="h-[calc(100vh-9rem)] [&_[data-radix-scroll-area-viewport]>div]:!block">
+            {openConversation ? (
+              <div className="px-5 py-4">
+                <ConversationTranscript messages={openConversation.messages} />
+              </div>
+            ) : showLoading ? (
+              <HistoryLoading />
+            ) : recentConversations.length === 0 ? (
+              <HistoryEmpty />
+            ) : (
+              <ul
+                aria-label="Recent conversations"
+                className="space-y-0.5 p-2"
+                onKeyDown={handleListKeyDown}
+                ref={listRef}
+              >
+                {recentConversations.map((conversation) => (
+                  <ConversationRow
+                      actions={
+                        <Button
+                          aria-label={`Delete conversation ${displayTitle(conversation.title)}`}
+                          className={`${iconButton} opacity-60 hover:text-destructive hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100`}
+                          data-tauri-drag-region={false}
+                          disabled={isDeleting}
+                          onClick={() => handleDeleteConfirm(conversation.id)}
+                          size="icon"
+                          title="Delete conversation"
+                          variant="ghost"
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      }
+                      conversation={conversation}
+                      isCurrent={conversation.id === currentConversationId}
+                      key={conversation.id}
+                      onOpen={(c) => setOpenConversationId(c.id)}
+                    />
+                ))}
+              </ul>
+            )}
+          </ScrollArea>
+
+          <DeleteConfirmationDialog
+            cancelDelete={cancelDelete}
+            confirmDelete={handleConfirmDelete}
+            deleteConfirm={deleteConfirm}
+            description={`Delete "${displayTitle(pendingDelete?.title)}"? This can't be undone.`}
+            isLoading={isDeleting}
+          />
+        </TransparentPopoverContent>
+      </Popover>
+    </div>
+  );
 };
