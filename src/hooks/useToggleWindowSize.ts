@@ -10,8 +10,8 @@ export type ToggleWindowView = keyof typeof TOGGLE_WINDOW_SIZES;
 
 /**
  * Owns native sizing for views rendered inside the compact assistant window.
- * Keeping these dimensions here prevents dashboard routes from changing the
- * toggle window and gives each compact view one explicit lifecycle.
+ * Keeping these dimensions here gives each compact view one explicit
+ * lifecycle.
  */
 export const useToggleWindowSize = () => {
   const resizeForView = useCallback(async (view: ToggleWindowView) => {

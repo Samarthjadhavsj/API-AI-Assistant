@@ -4,7 +4,7 @@ import { Button } from "@/components";
 import { TOGGLE_SETTINGS_SECTIONS } from "./toggle-settings.constants";
 import { ToggleSettingsShell } from "./ToggleSettingsShell";
 
-/** Landing page for every configurable dashboard feature in the compact toggle. */
+/** Landing page for every configurable feature in the compact toggle. */
 const ToggleSettings = () => {
   const navigate = useNavigate();
 

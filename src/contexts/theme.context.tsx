@@ -110,7 +110,7 @@ export function ThemeProvider({
     const popoverGlassColor = isDark ? '20, 20, 20' : '255, 255, 255';
 
     // `--opacity` is retained for existing consumers. The toggle-specific
-    // variables prevent this preference from affecting the full dashboard.
+    // variables scope this preference to the compact toggle surface.
     root.style.setProperty("--opacity", opacity.toString());
     root.style.setProperty(
       "--toggle-surface-opacity",
