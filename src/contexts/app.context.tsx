@@ -22,7 +22,6 @@ import { IContextType, ScreenshotConfig, TYPE_PROVIDER } from "@/types";
 import curl2Json from "@bany/curl-to-json";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { enable, disable } from "@tauri-apps/plugin-autostart";
 import {
   ReactNode,
@@ -267,21 +266,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const updateCursor = (type: CursorType | undefined) => {
     try {
-      const currentWindow = getCurrentWindow();
       const platform = getPlatform();
       // For Linux, always use default cursor
       if (platform === "linux") {
         document.documentElement.style.setProperty("--cursor-type", "default");
         return;
       }
-      const windowLabel = currentWindow.label;
-
-      if (windowLabel === "dashboard") {
-        // For dashboard, always use default cursor
-        document.documentElement.style.setProperty("--cursor-type", "default");
-        return;
-      }
-
       // The main window normally follows the stealth cursor preference, but
       // settings is an interactive route and must never hide the pointer.
       if (window.location.pathname.startsWith("/toggle/settings")) {

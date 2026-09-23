@@ -235,8 +235,6 @@ pub fn run() {
                 }
             });
 
-            // Dashboard creation removed - only toggle window exists now
-
             #[cfg(desktop)]
             {
                 use tauri_plugin_autostart::MacosLauncher;

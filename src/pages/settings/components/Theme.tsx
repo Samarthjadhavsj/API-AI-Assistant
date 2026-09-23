@@ -81,7 +81,7 @@ export const Theme = () => {
       <div className="space-y-2">
         <Header
           title="Toggle Window Transparency"
-          description="Adjust the compact toggle surface without changing dashboard opacity"
+          description="Adjust the transparency of the compact toggle surface"
         />
         <div className="space-y-3">
           <div className="flex items-center gap-4 pt-2">

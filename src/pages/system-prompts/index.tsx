@@ -24,7 +24,6 @@ import {
 import { DeleteSystemPrompt } from "./Delete";
 import { CreateEditDialog } from "./CreateEditDialog";
 import { useState } from "react";
-import { PageLayout } from "@/layouts";
 
 export const SystemPromptsContent = () => {
   const {
@@ -277,14 +276,3 @@ export const SystemPromptsContent = () => {
     </>
   );
 };
-
-const SystemPrompts = () => (
-  <PageLayout
-    title="System Prompts"
-    description="Manage your AI behavior profiles and create new ones"
-  >
-    <SystemPromptsContent />
-  </PageLayout>
-);
-
-export default SystemPrompts;
