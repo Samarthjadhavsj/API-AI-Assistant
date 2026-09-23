@@ -21,10 +21,10 @@ export const ToggleSettingsShell = ({ title, description, backTo, children }: To
           <Button aria-label="Go back" data-tauri-drag-region={false} onClick={() => navigate(backTo)} size="icon" title="Go back" variant="ghost">
             <ArrowLeftIcon className="size-4" />
           </Button>
-          <SettingsIcon className="size-4 text-muted-foreground" />
-          <div>
-            <h1 className="text-sm font-semibold">{title}</h1>
-            <p className="text-xs text-muted-foreground">{description}</p>
+          <SettingsIcon className="size-4 shrink-0 text-muted-foreground" />
+          <div className="min-w-0">
+            <h1 className="truncate text-sm font-semibold">{title}</h1>
+            <p className="truncate text-xs text-muted-foreground">{description}</p>
           </div>
         </header>
         <ScrollArea className="min-h-0 flex-1">

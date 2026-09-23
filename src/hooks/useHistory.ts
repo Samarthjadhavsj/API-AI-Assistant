@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   getAllConversations,
   deleteConversation,
+  deleteAllConversations,
   DOWNLOAD_SUCCESS_DISPLAY_MS,
 } from "@/lib";
 import { ChatConversation } from "@/types/completion";
@@ -15,6 +16,7 @@ export interface UseHistoryReturn {
   viewingConversation: ChatConversation | null;
   downloadedConversations: Set<string>;
   deleteConfirm: string | null;
+  deleteAllConfirm: boolean;
   isDeleting: boolean;
   isDownloaded: boolean;
   isAttached: boolean;
@@ -28,6 +30,9 @@ export interface UseHistoryReturn {
   handleDeleteConfirm: (conversationId: string) => void;
   confirmDelete: () => Promise<void>;
   cancelDelete: () => void;
+  handleDeleteAllConfirm: () => void;
+  confirmDeleteAll: () => Promise<void>;
+  cancelDeleteAll: () => void;
   handleAttachToOverlay: (conversationId: string) => void;
   handleDownload: (
     conversation: ChatConversation | null,
@@ -68,6 +73,7 @@ export function useHistory({
   >(new Set());
 
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [deleteAllConfirm, setDeleteAllConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   // Ref guard so a second delete can't start before React re-renders
   const isDeletingRef = useRef(false);
@@ -175,6 +181,36 @@ export function useHistory({
     setDeleteConfirm(null);
   };
 
+  const handleDeleteAllConfirm = () => {
+    setDeleteAllConfirm(true);
+  };
+
+  const confirmDeleteAll = async () => {
+    if (isDeletingRef.current) return;
+
+    isDeletingRef.current = true;
+    setIsDeleting(true);
+    try {
+      setSelectedConversationId(null);
+      setViewingConversation(null);
+      await deleteAllConversations();
+      setConversations([]);
+
+      // Lets an active conversation in the main input reset itself
+      window.dispatchEvent(new CustomEvent("conversationsCleared"));
+    } catch (error) {
+      console.error("Failed to delete all conversations:", error);
+    } finally {
+      isDeletingRef.current = false;
+      setIsDeleting(false);
+      setDeleteAllConfirm(false);
+    }
+  };
+
+  const cancelDeleteAll = () => {
+    setDeleteAllConfirm(false);
+  };
+
   const handleAttachToOverlay = (conversationId: string) => {
     // Use localStorage to communicate between windows
     localStorage.setItem(
@@ -237,6 +273,7 @@ export function useHistory({
     viewingConversation,
     downloadedConversations,
     deleteConfirm,
+    deleteAllConfirm,
     isDeleting,
     isDownloaded,
     isAttached,
@@ -247,6 +284,9 @@ export function useHistory({
     handleDeleteConfirm,
     confirmDelete,
     cancelDelete,
+    handleDeleteAllConfirm,
+    confirmDeleteAll,
+    cancelDeleteAll,
     handleAttachToOverlay,
     handleDownload,
     // Utilities

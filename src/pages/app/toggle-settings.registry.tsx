@@ -15,6 +15,7 @@ import {
 import { SystemPromptsContent } from "@/pages/system-prompts";
 import { Theme } from "@/pages/settings/components";
 import { VoiceTranscriptionSettings } from "./components/VoiceTranscriptionSettings";
+import { MessageHistorySettings } from "./components/message-history/MessageHistorySettings";
 import type { ToggleSettingsSectionId } from "./toggle-settings.constants";
 
 const AppearanceSettings = () => <Theme />;
@@ -60,6 +61,7 @@ export const TOGGLE_SETTINGS_CONTENT = {
   providers: ProviderSettings,
   "hey-frank-access": ProviderSettings,
   speech: SpeechToTextSettings,
+  history: MessageHistorySettings,
   responses: ResponseSettings,
   screenshot: ScreenshotSettings,
   audio: AudioSelection,
