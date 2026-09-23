@@ -1,7 +1,7 @@
 import { Loader2, XIcon } from "lucide-react";
 import {
   Popover,
-  PopoverTrigger,
+  PopoverAnchor,
   Button,
   ScrollArea,
   Markdown,
@@ -12,7 +12,7 @@ import { TransparentPopoverContent } from "@/components/ui/popover";
 import { UseCompletionReturn } from "@/types";
 import { MessageHistory } from "./MessageHistory";
 import { VoiceInputBar, VoiceUiState } from "./VoiceInputBar";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type ComponentProps } from "react";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { useApp } from "@/contexts";
 import { invoke } from "@tauri-apps/api/core";
@@ -251,6 +251,28 @@ export const Input = ({
     };
   }, []);
 
+  // The response panel is opened by completion state, never by clicking, so the
+  // input bar only anchors its position. Using the bar as a PopoverTrigger made
+  // every click in it (input, Message History, attachments) toggle the panel
+  // closed, which resets the response, input and attachments.
+  const inputBarRef = useRef<HTMLDivElement>(null);
+
+  // Interacting with the input bar, or with another floating layer opened from
+  // it (Message History, attachments), is not a request to dismiss the response.
+  // Escape and interactions elsewhere still close it as before.
+  const keepResponseOpenOnInteraction: ComponentProps<
+    typeof TransparentPopoverContent
+  >["onInteractOutside"] = (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (
+      inputBarRef.current?.contains(target) ||
+      target.closest("[data-radix-popper-content-wrapper]")
+    ) {
+      event.preventDefault();
+    }
+  };
+
   return (
     <div className="relative flex-1">
       <Popover
@@ -261,8 +283,11 @@ export const Input = ({
           }
         }}
       >
-        <PopoverTrigger asChild className="!border-none !bg-transparent">
-          <div className="relative select-none flex items-center gap-2 w-full">
+        <PopoverAnchor asChild>
+          <div
+            ref={inputBarRef}
+            className="relative select-none flex items-center gap-2 w-full !border-none !bg-transparent"
+          >
             <VoiceInputBar
               state={voiceUiState}
               uiState={voiceUiState}
@@ -292,7 +317,7 @@ export const Input = ({
               />
             )}
           </div>
-        </PopoverTrigger>
+        </PopoverAnchor>
 
         {/* Response Panel */}
         <TransparentPopoverContent
@@ -300,6 +325,7 @@ export const Input = ({
           side="bottom"
           className="w-screen p-0 border overflow-hidden"
           sideOffset={8}
+          onInteractOutside={keepResponseOpenOnInteraction}
         >
           <div className="flex items-center justify-between px-4 py-2 border-b">
             <div className="flex flex-row gap-1 items-center">
