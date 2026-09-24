@@ -314,6 +314,11 @@ export const Input = ({
         </span>
       </div>
       <Markdown>{message.content}</Markdown>
+      {message.attachedFiles && message.attachedFiles.length > 0 && (
+        <p className="mt-2 text-xs text-muted-foreground break-words" data-testid="message-attachments">
+          Attached: {message.attachedFiles.map((file) => file.name).join(", ")}
+        </p>
+      )}
     </div>
   );
 

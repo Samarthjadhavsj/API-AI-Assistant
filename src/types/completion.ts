@@ -2,9 +2,16 @@
 export interface AttachedFile {
   id: string;
   name: string;
+  /** MIME type. For images, the format detected from the file's content. */
   type: string;
+  /** Image data; empty for text files and for images stored in history. */
   base64: string;
+  /** Size in bytes. */
   size: number;
+  /** How the file is sent: as an image part, or as text in the message. Missing on older records (images). */
+  kind?: "image" | "text";
+  /** Contents of a text/code file. */
+  text?: string;
 }
 
 export interface ChatMessage {
@@ -12,6 +19,7 @@ export interface ChatMessage {
   role: "user" | "assistant" | "system";
   content: string;
   timestamp: number;
+  /** What was attached; image data is not kept (see toStoredAttachments). */
   attachedFiles?: AttachedFile[];
 }
 

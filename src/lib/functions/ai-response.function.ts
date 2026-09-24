@@ -4,6 +4,7 @@ import {
   extractVariables,
   getByPath,
   getStreamingContent,
+  type ImageInput,
 } from "./common.function";
 import { Message, TYPE_PROVIDER } from "@/types";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
@@ -35,6 +36,19 @@ function buildEnhancedSystemPrompt(baseSystemPrompt?: string): string {
   return prompts.join(" ");
 }
 
+/**
+ * The provider request failed (network, HTTP error, broken stream). Thrown,
+ * never yielded, so callers can't mistake the error for the AI's answer.
+ */
+export class AIRequestError extends Error {
+  constructor(message: string, readonly status?: number) {
+    super(message);
+    this.name = "AIRequestError";
+  }
+}
+
+const MAX_ERROR_BODY_CHARS = 500;
+
 export async function* fetchAIResponse(params: {
   provider: TYPE_PROVIDER | undefined;
   selectedProvider: {
@@ -44,7 +58,10 @@ export async function* fetchAIResponse(params: {
   systemPrompt?: string;
   history?: Message[];
   userMessage: string;
+  /** Base64 PNG images (screenshots). */
   imagesBase64?: string[];
+  /** Images with their real MIME type (attached files). */
+  images?: ImageInput[];
   signal?: AbortSignal;
 }): AsyncIterable<string> {
   try {
@@ -57,6 +74,10 @@ export async function* fetchAIResponse(params: {
       imagesBase64 = [],
       signal,
     } = params;
+    const images: Array<string | ImageInput> = [
+      ...(params.images ?? []),
+      ...imagesBase64,
+    ];
 
     // Check if already aborted
     if (signal?.aborted) {
@@ -102,14 +123,27 @@ export async function* fetchAIResponse(params: {
     if (!userMessage) {
       throw new Error("User message is required");
     }
-    if (imagesBase64.length > 0 && !provider.curl.includes("{{IMAGE}}")) {
+    if (images.length > 0 && !provider.curl.includes("{{IMAGE}}")) {
       throw new Error(
         `Provider ${provider?.id ?? "unknown"} does not support image input`
       );
     }
 
+    const allVariables = {
+      ...Object.fromEntries(
+        Object.entries(selectedProvider.variables).map(([key, value]) => [
+          key.toUpperCase(),
+          value,
+        ])
+      ),
+      SYSTEM_PROMPT: enhancedSystemPrompt || "",
+    };
+
+    // Fill in the template's variables before inserting the conversation, so
+    // "{{API_KEY}}" or "{{MODEL}}" typed in a message or an attached file stays
+    // as written instead of being replaced with the real key or model.
     let bodyObj: any = curlJson.data
-      ? JSON.parse(JSON.stringify(curlJson.data))
+      ? deepVariableReplacer(JSON.parse(JSON.stringify(curlJson.data)), allVariables)
       : {};
     const messagesKey = Object.keys(bodyObj).find((key) =>
       ["messages", "contents", "conversation", "history"].includes(key)
@@ -120,7 +154,7 @@ export async function* fetchAIResponse(params: {
         bodyObj[messagesKey],
         history,
         userMessage,
-        imagesBase64
+        images
       );
       
       // Fix Gemini format: convert "content" to "parts"
@@ -140,20 +174,6 @@ export async function* fetchAIResponse(params: {
       }
     }
 
-    const allVariables = {
-      ...Object.fromEntries(
-        Object.entries(selectedProvider.variables).map(([key, value]) => [
-          key.toUpperCase(),
-          value,
-        ])
-      ),
-      SYSTEM_PROMPT: enhancedSystemPrompt || "",
-    };
-
-    // Debug logging removed
-
-    bodyObj = deepVariableReplacer(bodyObj, allVariables);
-    
     // Extract URL directly from curl string to preserve query parameters
     let url = "";
     const curlUrlMatch = provider.curl.match(/curl\s+(?:-X\s+\w+\s+)?"([^"]+)"/);
@@ -203,21 +223,27 @@ export async function* fetchAIResponse(params: {
       ) {
         return; // Silently return on abort
       }
-      yield `Network error during API request: ${
-        fetchError instanceof Error ? fetchError.message : "Unknown error"
-      }`;
-      return;
+      throw new AIRequestError(
+        `Network error during API request: ${
+          fetchError instanceof Error ? fetchError.message : "Unknown error"
+        }`
+      );
     }
 
     if (!response.ok) {
       let errorText = "";
       try {
-        errorText = await response.text();
+        errorText = (await response.text()).trim();
       } catch {}
-      yield `API request failed: ${response.status} ${response.statusText}${
-        errorText ? ` - ${errorText}` : ""
-      }`;
-      return;
+      if (errorText.length > MAX_ERROR_BODY_CHARS) {
+        errorText = `${errorText.slice(0, MAX_ERROR_BODY_CHARS)}…`;
+      }
+      throw new AIRequestError(
+        `API request failed: ${response.status} ${response.statusText}${
+          errorText ? ` - ${errorText}` : ""
+        }`,
+        response.status
+      );
     }
 
     if (!provider?.streaming) {
@@ -225,10 +251,11 @@ export async function* fetchAIResponse(params: {
       try {
         json = await response.json();
       } catch (parseError) {
-        yield `Failed to parse non-streaming response: ${
-          parseError instanceof Error ? parseError.message : "Unknown error"
-        }`;
-        return;
+        throw new AIRequestError(
+          `Failed to parse non-streaming response: ${
+            parseError instanceof Error ? parseError.message : "Unknown error"
+          }`
+        );
       }
       const content =
         getByPath(json, provider?.responseContentPath || "") || "";
@@ -237,8 +264,7 @@ export async function* fetchAIResponse(params: {
     }
 
     if (!response.body) {
-      yield "Streaming not supported or response body missing";
-      return;
+      throw new AIRequestError("Streaming not supported or response body missing");
     }
 
     const reader = response.body.getReader();
@@ -263,10 +289,11 @@ export async function* fetchAIResponse(params: {
         ) {
           return; // Silently return on abort
         }
-        yield `Error reading stream: ${
-          readError instanceof Error ? readError.message : "Unknown error"
-        }`;
-        return;
+        throw new AIRequestError(
+          `Error reading stream: ${
+            readError instanceof Error ? readError.message : "Unknown error"
+          }`
+        );
       }
       const { done, value } = readResult;
       if (done) break;
@@ -301,6 +328,7 @@ export async function* fetchAIResponse(params: {
       }
     }
   } catch (error) {
+    if (error instanceof AIRequestError) throw error;
     throw new Error(
       `Error in fetchAIResponse: ${
         error instanceof Error ? error.message : "Unknown error"

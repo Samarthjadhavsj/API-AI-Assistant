@@ -6,7 +6,7 @@ import {
   ChangeEvent,
   ClipboardEvent,
 } from "react";
-import type { ChatMessage } from "./completion";
+import type { AttachedFile, ChatMessage } from "./completion";
 // import {
 //   AttachedFile,
 //   ChatMessage,
@@ -40,8 +40,8 @@ export interface UseCompletionReturn {
 
   // File attachment management
   /** Array of currently attached files */
-  attachedFiles: any[];
-  /** Function to add a file to attachments */
+  attachedFiles: AttachedFile[];
+  /** Function to check, read and attach a file */
   addFile: (file: File) => Promise<void>;
   /** Function to remove a file by its ID */
   removeFile: (fileId: string) => void;
@@ -113,6 +113,12 @@ export interface UseCompletionReturn {
   setIsFilesPopoverOpen: Dispatch<SetStateAction<boolean>>;
   /** Function to remove all files and close the files popover */
   onRemoveAllFiles: () => void;
+  /** Why picked or pasted files weren't attached */
+  attachmentNotices: string[];
+  /** Clears the attachment notices */
+  dismissAttachmentNotices: () => void;
+  /** Whether picked or pasted files are still being read */
+  isReadingAttachments: boolean;
 
   /** Ref for the input element */
   inputRef: RefObject<HTMLTextAreaElement | null>;

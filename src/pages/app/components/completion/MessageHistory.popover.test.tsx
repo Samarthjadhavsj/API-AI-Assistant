@@ -240,6 +240,49 @@ describe("Main overlay Message History browser", () => {
       expect(selected).not.toHaveBeenCalled();
     });
 
+    it("shows which files were attached to each question", async () => {
+      const file = (name: string, type: string, kind: "image" | "text") => ({
+        id: name,
+        name,
+        type,
+        kind,
+        size: 10,
+        base64: "",
+      });
+      db.conversations = [
+        {
+          ...chatB,
+          title: "Attachment review",
+          messages: [
+            {
+              ...message("f1", "user", "Review these", 1_700_000_500_000),
+              attachedFiles: [
+                file("screenshot_1.png", "image/png", "image"),
+                { ...file("notes.txt", "text/plain", "text"), text: "Ship Friday" },
+              ],
+            },
+            message("f2", "assistant", "Looks good.", 1_700_000_600_000),
+            message("f3", "user", "Anything else?", 1_700_000_700_000),
+          ],
+        },
+      ];
+      const user = userEvent.setup();
+      render(<Harness />);
+
+      const transcript = await openConversation(user, "Attachment review");
+      const entries = Array.from(transcript.children) as HTMLElement[];
+
+      const attachments = within(entries[0]).getByRole("list", { name: "Attachments" });
+      expect(within(attachments).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+        "Image: screenshot_1.png",
+        "File: notes.txt",
+      ]);
+      expect(within(entries[1]).queryByRole("list", { name: "Attachments" })).not.toBeInTheDocument();
+      expect(within(entries[2]).queryByRole("list", { name: "Attachments" })).not.toBeInTheDocument();
+      // Names only: the note's text isn't shown in the transcript
+      expect(within(transcript).queryByText("Ship Friday")).not.toBeInTheDocument();
+    });
+
     it("shows questions and answers in chronological order", async () => {
       const user = userEvent.setup();
       render(<Harness />);
