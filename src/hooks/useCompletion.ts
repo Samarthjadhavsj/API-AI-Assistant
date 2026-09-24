@@ -902,6 +902,9 @@ export const useCompletion = () => {
     const config = screenshotConfigRef.current;
     screenshotInitiatedByThisContext.current = true;
     setIsScreenshotLoading(true);
+    // Once the selection overlay is open, its "captured-selection" or
+    // "capture-closed" event ends the capture. Every other path ends here.
+    let handedOffToOverlay = false;
 
     try {
       // Check screen recording permission on macOS
@@ -929,8 +932,6 @@ export const useCompletion = () => {
               error:
                 "Screen Recording permission required. Please enable it by going to System Settings > Privacy & Security > Screen & System Audio Recording. If you don't see Hey Frank in the list, click the '+' button to add it. If it's already listed, make sure it's enabled. Then restart the app.",
             }));
-            setIsScreenshotLoading(false);
-            screenshotInitiatedByThisContext.current = false;
             return;
           }
         }
@@ -947,31 +948,43 @@ export const useCompletion = () => {
           // Manual mode: Add to attached files without prompt
           await handleScreenshotSubmit(base64 as string);
         }
-        screenshotInitiatedByThisContext.current = false;
       } else {
         // Selection Mode: Open overlay to select an area
         isProcessingScreenshotRef.current = false;
         await invoke("start_screen_capture");
+        handedOffToOverlay = true;
       }
     } catch (error) {
+      console.error("[Screenshot] Capture failed:", error);
       setState((prev) => ({
         ...prev,
-        error: "Failed to capture screenshot. Please try again.",
+        error: config.enabled
+          ? "Failed to capture screenshot. Please try again."
+          : "Couldn't open screen selection. Please try again.",
       }));
       isProcessingScreenshotRef.current = false;
-      screenshotInitiatedByThisContext.current = false;
+      if (!config.enabled) {
+        // A failed start can leave some overlays open; close any that are.
+        invoke("close_overlay_window").catch((closeError) => {
+          console.error("[Screenshot] Failed to close selection overlay:", closeError);
+        });
+      }
     } finally {
-      if (config.enabled) {
+      if (!handedOffToOverlay) {
         setIsScreenshotLoading(false);
+        screenshotInitiatedByThisContext.current = false;
       }
     }
   }, [handleScreenshotSubmit]);
 
   useEffect(() => {
-    let unlisten: any;
+    // listen() resolves asynchronously: if this effect is cleaned up first,
+    // unsubscribe as soon as it resolves instead of leaking a stale listener.
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
 
     const setupListener = async () => {
-      unlisten = await listen("captured-selection", async (event: any) => {
+      const unsubscribe = await listen("captured-selection", async (event: any) => {
         if (!screenshotInitiatedByThisContext.current) {
           return;
         }
@@ -1002,14 +1015,17 @@ export const useCompletion = () => {
           }, 100);
         }
       });
+      if (disposed) unsubscribe();
+      else unlisten = unsubscribe;
     };
 
-    setupListener();
+    setupListener().catch((error) => {
+      console.error("[Screenshot] Failed to listen for captured selections:", error);
+    });
 
     return () => {
-      if (unlisten) {
-        unlisten();
-      }
+      disposed = true;
+      unlisten?.();
     };
   }, [handleScreenshotSubmit]);
 
