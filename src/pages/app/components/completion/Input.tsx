@@ -13,7 +13,14 @@ import { UseCompletionReturn } from "@/types";
 import type { ChatMessage } from "@/types/completion";
 import { MessageHistory } from "./MessageHistory";
 import { VoiceInputBar, VoiceUiState } from "./VoiceInputBar";
-import { useState, useEffect, useMemo, useRef, type ComponentProps } from "react";
+import {
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { useApp } from "@/contexts";
 import { invoke } from "@tauri-apps/api/core";
@@ -42,7 +49,13 @@ export const Input = ({
   keepEngaged,
   setKeepEngaged,
   onVoiceStateChange,
-}: UseCompletionReturn & { isHidden: boolean; onVoiceStateChange?: (state: string) => void }) => {
+  trailingControls,
+}: UseCompletionReturn & {
+  isHidden: boolean;
+  onVoiceStateChange?: (state: string) => void;
+  /** Composer controls (Screenshot, Attach) rendered at the end of the input bar. */
+  trailingControls?: ReactNode;
+}) => {
   const [voiceUiState, setVoiceUiState] = useState<VoiceUiState>("idle");
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const [voiceLiveTranscript, setVoiceLiveTranscript] = useState("");
@@ -266,9 +279,10 @@ export const Input = ({
   // closed, which resets the response, input and attachments.
   const inputBarRef = useRef<HTMLDivElement>(null);
 
-  // Interacting with the input bar, or with another floating layer opened from
-  // it (Message History, attachments), is not a request to dismiss the response.
-  // Escape and interactions elsewhere still close it as before.
+  // Interacting with the input bar and its controls (Message History,
+  // Screenshot, Attach), or with another floating layer opened from it, is not
+  // a request to dismiss the response. Escape and interactions elsewhere still
+  // close it as before.
   const keepResponseOpenOnInteraction: ComponentProps<
     typeof TransparentPopoverContent
   >["onInteractOutside"] = (event) => {
@@ -359,6 +373,7 @@ export const Input = ({
                 setMessageHistoryOpen={setMessageHistoryOpen}
               />
             )}
+            {trailingControls}
           </div>
         </PopoverAnchor>
 

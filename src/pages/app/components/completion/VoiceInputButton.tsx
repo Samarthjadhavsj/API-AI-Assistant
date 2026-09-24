@@ -43,11 +43,19 @@ export const VoiceComposer = ({
   onVoiceStateChange,
   ...completion
 }: UseCompletionReturn & { isHidden: boolean; onVoiceStateChange?: (state: string) => void }) => {
+  // Screenshot and Attach live inside the input bar (the response panel's
+  // anchor), so using them never dismisses and resets the visible answer.
   return (
-    <>
-      <Input {...completion} isHidden={isHidden} onVoiceStateChange={onVoiceStateChange} />
-      <Screenshot {...completion} />
-      <Files {...completion} />
-    </>
+    <Input
+      {...completion}
+      isHidden={isHidden}
+      onVoiceStateChange={onVoiceStateChange}
+      trailingControls={
+        <>
+          <Screenshot {...completion} />
+          <Files {...completion} />
+        </>
+      }
+    />
   );
 };
