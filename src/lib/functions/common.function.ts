@@ -67,26 +67,57 @@ export function extractVariables(
   }));
 }
 
+/** An image to send: base64 data and its real MIME type. */
+export interface ImageInput {
+  data: string;
+  mimeType: string;
+}
+
+/** Plain base64 strings are screenshots, which are always PNG. */
+const toImageInput = (image: string | ImageInput): ImageInput =>
+  typeof image === "string" ? { data: image, mimeType: "image/png" } : image;
+
+/**
+ * Provider templates hard-code a MIME type next to the image slot
+ * ("data:image/png;base64,{{IMAGE}}", "media_type": "image/png", ...). Point it
+ * at the image's real type, or JPEG/WebP/GIF images are sent mislabeled and
+ * some providers reject them.
+ */
+const setImageMimeType = (partStr: string, mimeType: string): string =>
+  partStr
+    .replace(
+      /data:image\/[A-Za-z0-9.+-]+;base64,\{\{IMAGE\}\}/g,
+      () => `data:${mimeType};base64,{{IMAGE}}`
+    )
+    .replace(
+      /"(media_type|mime_type|mimeType)"(\s*):(\s*)"image\/[A-Za-z0-9.+-]+"/g,
+      (_match, key, before, after) => `"${key}"${before}:${after}"${mimeType}"`
+    );
+
 /**
  * Recursively processes a user message template to replace placeholders for text and images.
  * @param template The user message template object.
  * @param userMessage The user's text message.
- * @param imagesBase64 An array of base64 encoded images.
+ * @param images Images to send, as base64 strings (PNG) or with their MIME type.
  * @returns The processed user message object.
  */
 export function processUserMessageTemplate(
   template: any,
   userMessage: string,
-  imagesBase64: string[] = []
+  images: Array<string | ImageInput> = []
 ): any {
   const escapeForJson = (value: string) =>
     JSON.stringify(value ?? "").slice(1, -1);
 
+  // A function replacer inserts the text verbatim: a string replacement would
+  // treat "$&", "$'" and "$$" in the message (common in code) as patterns.
+  const escapedMessage = escapeForJson(userMessage);
   const templateStr = JSON.stringify(template).replace(
     /\{\{TEXT\}\}/g,
-    escapeForJson(userMessage)
+    () => escapedMessage
   );
   const result = JSON.parse(templateStr);
+  const imageInputs = images.map(toImageInput);
 
   const imageReplacer = (node: any): any => {
     if (Array.isArray(node)) {
@@ -97,12 +128,12 @@ export function processUserMessageTemplate(
       if (imageTemplateIndex > -1) {
         const imageTemplate = node[imageTemplateIndex];
         const imageParts =
-          imagesBase64.length > 0
-            ? imagesBase64.map((img) => {
-                const partStr = JSON.stringify(imageTemplate).replace(
-                  /\{\{IMAGE\}\}/g,
-                  img
-                );
+          imageInputs.length > 0
+            ? imageInputs.map((img) => {
+                const partStr = setImageMimeType(
+                  JSON.stringify(imageTemplate),
+                  img.mimeType
+                ).replace(/\{\{IMAGE\}\}/g, () => img.data);
                 return JSON.parse(partStr);
               })
             : [];
@@ -133,14 +164,14 @@ export function processUserMessageTemplate(
  * @param messagesTemplate The message template array from the cURL configuration.
  * @param history An array of previous messages in the conversation.
  * @param userMessage The user's current text message.
- * @param imagesBase64 An array of base64 encoded images for the current message.
+ * @param images Images for the current message (base64 PNG, or with their MIME type).
  * @returns The fully constructed messages array.
  */
 export function buildDynamicMessages(
   messagesTemplate: any[],
   history: Message[],
   userMessage: string,
-  imagesBase64: string[] = []
+  images: Array<string | ImageInput> = []
 ): any[] {
   const userMessageTemplateIndex = messagesTemplate.findIndex((m) =>
     JSON.stringify(m).includes("{{TEXT}}")
@@ -157,7 +188,7 @@ export function buildDynamicMessages(
   const newUserMessage = processUserMessageTemplate(
     userMessageTemplate,
     userMessage,
-    imagesBase64
+    images
   );
 
   return [...prefixMessages, ...history, newUserMessage, ...suffixMessages];
@@ -176,7 +207,8 @@ export function deepVariableReplacer(
   if (typeof node === "string") {
     let result = node;
     for (const [key, value] of Object.entries(variables)) {
-      result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), value);
+      // Function replacer: "$" in a value (API key, prompt) is taken literally.
+      result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), () => value);
     }
     return result;
   }

@@ -171,7 +171,7 @@ const answer = () => screen.queryByText(ANSWER);
 const draft = () => screen.getByLabelText("Message input");
 const attachments = () => screen.getByTestId("attachments").textContent;
 const screenshotButton = () => screen.getByRole("button", { name: /Screenshot mode/ });
-const attachButton = () => screen.getByRole("button", { name: "Attach images" });
+const attachButton = () => screen.getByRole("button", { name: "Attach files" });
 
 describe("Screenshot and Attach with a visible answer", () => {
   let reset: Mock<() => void>;
@@ -217,7 +217,7 @@ describe("Screenshot and Attach with a visible answer", () => {
     await user.click(attachButton());
 
     // With an attachment, Attach opens the attachments list
-    expect(await screen.findByText("Attached Images (1/6)")).toBeInTheDocument();
+    expect(await screen.findByText("Attachments (1/6)")).toBeInTheDocument();
     expect(answer()).toBeInTheDocument();
     expect(draft()).toHaveValue("draft to keep");
     expect(attachments()).toBe("photo.png");

@@ -5,9 +5,18 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Button, ScrollArea } from "@/components";
-import { PaperclipIcon, XIcon, PlusIcon, TrashIcon } from "lucide-react";
+import {
+  PaperclipIcon,
+  XIcon,
+  PlusIcon,
+  TrashIcon,
+  FileTextIcon,
+  AlertCircleIcon,
+  Loader2,
+} from "lucide-react";
 import { UseCompletionReturn } from "@/types";
 import { MAX_FILES } from "@/config";
+import { ATTACHMENT_ACCEPT, formatBytes, isImageAttachment } from "@/lib/attachments";
 
 export const Files = ({
   attachedFiles,
@@ -17,6 +26,9 @@ export const Files = ({
   isLoading,
   isFilesPopoverOpen,
   setIsFilesPopoverOpen,
+  attachmentNotices = [],
+  dismissAttachmentNotices,
+  isReadingAttachments = false,
 }: UseCompletionReturn) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -25,15 +37,23 @@ export const Files = ({
   };
 
   const canAddMore = attachedFiles.length < MAX_FILES;
+  const hasNotices = attachmentNotices.length > 0;
 
   return (
     <div className="relative mt-1 shrink-0">
-      <Popover open={isFilesPopoverOpen} onOpenChange={setIsFilesPopoverOpen}>
+      <Popover
+        open={isFilesPopoverOpen}
+        onOpenChange={(open) => {
+          setIsFilesPopoverOpen(open);
+          // Notices explain the last pick; they're done once the panel closes.
+          if (!open) dismissAttachmentNotices?.();
+        }}
+      >
         <PopoverTrigger asChild>
           <Button
             size="icon"
             onClick={() => {
-              if (attachedFiles.length === 0) {
+              if (attachedFiles.length === 0 && !hasNotices) {
                 // If no files, directly open file picker
                 fileInputRef.current?.click();
               } else {
@@ -43,10 +63,15 @@ export const Files = ({
             }}
             disabled={isLoading}
             className="size-8 cursor-pointer"
-            title="Attach images"
+            title="Attach files"
+            aria-busy={isReadingAttachments}
             data-tauri-drag-region={false}
           >
-            <PaperclipIcon className="h-4 w-4" />
+            {isReadingAttachments ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <PaperclipIcon className="h-4 w-4" />
+            )}
           </Button>
         </PopoverTrigger>
 
@@ -57,7 +82,7 @@ export const Files = ({
           </div>
         )}
 
-        {attachedFiles.length > 0 && (
+        {(attachedFiles.length > 0 || hasNotices) && (
           <PopoverContent
             align="end"
             side="bottom"
@@ -66,12 +91,15 @@ export const Files = ({
           >
             <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/30">
               <h3 className="font-semibold text-sm select-none">
-                Attached Images ({attachedFiles.length}/{MAX_FILES})
+                Attachments ({attachedFiles.length}/{MAX_FILES})
               </h3>
               <Button
                 size="icon"
                 variant="ghost"
-                onClick={() => setIsFilesPopoverOpen(false)}
+                onClick={() => {
+                  setIsFilesPopoverOpen(false);
+                  dismissAttachmentNotices?.();
+                }}
                 className="cursor-pointer"
                 title="Close"
               >
@@ -80,7 +108,24 @@ export const Files = ({
             </div>
 
             <ScrollArea className="p-4 h-[calc(100vh-11rem)]">
-              {/* Grid layout based on number of images */}
+              {hasNotices && (
+                <div
+                  role="alert"
+                  className="mb-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive"
+                >
+                  <div className="flex items-center gap-2 font-medium mb-1">
+                    <AlertCircleIcon className="h-4 w-4 shrink-0" />
+                    Some files weren't attached
+                  </div>
+                  <ul className="space-y-1 pl-6 list-disc break-words">
+                    {attachmentNotices.map((notice, index) => (
+                      <li key={index}>{notice}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Grid layout based on number of files */}
               <div
                 className={`gap-3 ${
                   attachedFiles.length <= 2
@@ -93,18 +138,24 @@ export const Files = ({
                     key={file.id}
                     className="relative group border rounded-lg overflow-hidden bg-muted/20"
                   >
-                    <img
-                      src={`data:${file.type};base64,${file.base64}`}
-                      alt={file.name}
-                      className={`w-full object-cover h-full`}
-                    />
+                    {isImageAttachment(file) ? (
+                      <img
+                        src={`data:${file.type};base64,${file.base64}`}
+                        alt={file.name}
+                        className={`w-full object-cover h-full`}
+                      />
+                    ) : (
+                      <div className="flex h-28 items-center justify-center text-muted-foreground">
+                        <FileTextIcon className="h-10 w-10" />
+                      </div>
+                    )}
 
                     {/* File info overlay */}
                     <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white p-2 text-xs">
-                      <div className="truncate font-medium">{file.name}</div>
-                      <div className="text-gray-300">
-                        {(file.size / 1024 / 1024).toFixed(2)} MB
+                      <div className="truncate font-medium" title={file.name}>
+                        {file.name}
                       </div>
+                      <div className="text-gray-300">{formatBytes(file.size)}</div>
                     </div>
 
                     {/* Remove button */}
@@ -113,7 +164,8 @@ export const Files = ({
                       variant="default"
                       className="absolute top-2 right-2 h-6 w-6 cursor-pointer"
                       onClick={() => removeFile(file.id)}
-                      title="Remove image"
+                      title="Remove attachment"
+                      aria-label={`Remove ${file.name}`}
                     >
                       <XIcon className="h-3 w-3" />
                     </Button>
@@ -131,15 +183,16 @@ export const Files = ({
                 variant="outline"
               >
                 <PlusIcon className="h-4 w-4 mr-2" />
-                Add More Images {!canAddMore && `(${MAX_FILES} max)`}
+                Add More Files {!canAddMore && `(${MAX_FILES} max)`}
               </Button>
               <Button
                 className="w-2/4"
                 variant="destructive"
                 onClick={onRemoveAllFiles}
+                disabled={attachedFiles.length === 0}
               >
                 <TrashIcon className="h-4 w-4 mr-2" />
-                Remove All Images
+                Remove All Files
               </Button>
             </div>
           </PopoverContent>
@@ -150,9 +203,10 @@ export const Files = ({
         ref={fileInputRef}
         type="file"
         multiple
-        accept="image/*"
+        accept={ATTACHMENT_ACCEPT}
         onChange={handleFileSelect}
         className="hidden"
+        data-testid="attachment-input"
       />
     </div>
   );

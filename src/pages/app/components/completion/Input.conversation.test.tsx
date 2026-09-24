@@ -128,6 +128,22 @@ describe("Input conversation thread", () => {
     expect(history).toEqual([oldQuestion, oldAnswer]);
   });
 
+  it("lists what was attached to a question, sent or loaded from history", () => {
+    const attached = (name: string) => ({ id: name, name, type: "image/png", kind: "image" as const, base64: "", size: 1 });
+    const savedWithFile = { ...oldQuestion, attachedFiles: [attached("chart.png"), attached("data.csv")] };
+    const pendingWithFile = { ...newQuestion, attachedFiles: [attached("screen.png")] };
+    renderInput({
+      conversationHistory: Object.freeze([oldAnswer, savedWithFile]),
+      pendingMessage: pendingWithFile,
+      isLoading: true,
+    });
+
+    expect(screen.getAllByTestId("message-attachments").map((el) => el.textContent)).toEqual([
+      "Attached: chart.png, data.csv",
+      "Attached: screen.png",
+    ]);
+  });
+
   it("normal (non-conversation) mode still shows just the latest answer", () => {
     renderInput({ keepEngaged: false, response: "Latest answer", pendingMessage: newQuestion });
 

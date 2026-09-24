@@ -18,22 +18,18 @@ import {
 } from "@/lib";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-
-// Types for completion
-interface AttachedFile {
-  id: string;
-  name: string;
-  type: string;
-  base64: string;
-  size: number;
-}
-
-interface ChatMessage {
-  id: string;
-  role: "user" | "assistant" | "system";
-  content: string;
-  timestamp: number;
-}
+import {
+  base64ByteLength,
+  buildPromptWithTextFiles,
+  createAttachmentId,
+  defaultPromptFor,
+  isImageAttachment,
+  isSameAttachment,
+  readAttachment,
+  toStoredAttachments,
+  validateAttachmentsForProvider,
+} from "@/lib/attachments";
+import type { AttachedFile, ChatMessage } from "@/types/completion";
 
 interface ChatConversation {
   id: string;
@@ -79,6 +75,10 @@ export const useCompletion = () => {
   const [isFilesPopoverOpen, setIsFilesPopoverOpen] = useState(false);
   const [isScreenshotLoading, setIsScreenshotLoading] = useState(false);
   const [keepEngaged, setKeepEngaged] = useState(false);
+  /** Why picked or pasted files weren't attached, shown in the attachments panel. */
+  const [attachmentNotices, setAttachmentNotices] = useState<string[]>([]);
+  /** Files still being read; a send waits for them. */
+  const [pendingAttachmentReads, setPendingAttachmentReads] = useState(0);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const isProcessingScreenshotRef = useRef(false);
   const screenshotConfigRef = useRef(screenshotConfiguration);
@@ -104,27 +104,110 @@ export const useCompletion = () => {
     setState((prev) => ({ ...prev, response: value }));
   }, []);
 
-  const addFile = useCallback(async (file: File) => {
-    try {
-      const base64 = await fileToBase64(file);
-      const attachedFile: AttachedFile = {
-        id: Date.now().toString(),
-        name: file.name,
-        type: file.type,
-        base64,
-        size: file.size,
-      };
+  // Attachments as of the latest change, including files added since the last
+  // render: reads finish asynchronously, so the file limit and duplicate checks
+  // can't rely on the rendered state.
+  const attachmentsRef = useRef<AttachedFile[]>(state.attachedFiles);
+  const pendingReadsRef = useRef(0);
+  // Bumped whenever attachments are cleared, so a read that finishes afterwards
+  // doesn't bring a file back into a cleared composer or a new chat.
+  const attachmentGenerationRef = useRef(0);
+  // A send requested while files were still being read.
+  const queuedSubmitRef = useRef<{ speechText?: string } | null>(null);
 
-      setState((prev) => ({
-        ...prev,
-        attachedFiles: [...prev.attachedFiles, attachedFile],
-      }));
-    } catch (error) {
-      console.error("Failed to process file:", error);
-    }
+  useEffect(() => {
+    attachmentsRef.current = state.attachedFiles;
+  }, [state.attachedFiles]);
+
+  const setPendingReads = (delta: number) => {
+    pendingReadsRef.current += delta;
+    setPendingAttachmentReads(pendingReadsRef.current);
+  };
+
+  const appendAttachment = useCallback((file: AttachedFile) => {
+    attachmentsRef.current = [...attachmentsRef.current, file];
+    setState((prev) => ({
+      ...prev,
+      attachedFiles: [...prev.attachedFiles, file],
+    }));
   }, []);
 
+  /** Drops every attachment, including files still being read. */
+  const discardAttachments = useCallback(() => {
+    attachmentGenerationRef.current += 1;
+    attachmentsRef.current = [];
+    queuedSubmitRef.current = null;
+    setAttachmentNotices([]);
+  }, []);
+
+  /**
+   * Checks, reads and attaches picked or pasted files. Files that can't be
+   * attached are reported in the attachments panel; none are dropped silently.
+   */
+  const addFiles = useCallback(
+    async (files: File[]) => {
+      if (files.length === 0) return;
+      const generation = attachmentGenerationRef.current;
+      const notices: string[] = [];
+
+      const free = Math.max(
+        0,
+        MAX_FILES - attachmentsRef.current.length - pendingReadsRef.current
+      );
+      const accepted = files.slice(0, free);
+      const overflow = files.slice(free);
+      if (overflow.length > 0) {
+        notices.push(
+          `You can attach up to ${MAX_FILES} files. ${
+            overflow.length === 1
+              ? `"${overflow[0].name}" wasn't added.`
+              : `${overflow.length} files weren't added: ${overflow
+                  .map((f) => `"${f.name}"`)
+                  .join(", ")}.`
+          }`
+        );
+      }
+
+      // Kept in the order the files were picked.
+      const fileNotices: (string | null)[] = accepted.map(() => null);
+      setPendingReads(accepted.length);
+      await Promise.all(
+        accepted.map(async (file, index) => {
+          try {
+            const result = await readAttachment(file);
+            if (generation !== attachmentGenerationRef.current) return;
+            if (!result.ok) {
+              fileNotices[index] = result.reason;
+              return;
+            }
+            if (attachmentsRef.current.some((f) => isSameAttachment(f, result.file))) {
+              fileNotices[index] = `"${result.file.name}" is already attached.`;
+              return;
+            }
+            appendAttachment(result.file);
+          } catch (error) {
+            console.error("[Attachments] Failed to attach file:", error);
+            fileNotices[index] = `${file.name}: the file couldn't be attached.`;
+          } finally {
+            setPendingReads(-1);
+          }
+        })
+      );
+
+      if (generation !== attachmentGenerationRef.current) return;
+      notices.push(...fileNotices.filter((n): n is string => n !== null));
+      if (notices.length > 0) {
+        setAttachmentNotices((prev) => [...prev, ...notices]);
+        setIsFilesPopoverOpen(true);
+      }
+    },
+    [appendAttachment]
+  );
+
+  const addFile = useCallback((file: File) => addFiles([file]), [addFiles]);
+
   const removeFile = useCallback((fileId: string) => {
+    attachmentsRef.current = attachmentsRef.current.filter((f) => f.id !== fileId);
     setState((prev) => ({
       ...prev,
       attachedFiles: prev.attachedFiles.filter((f) => f.id !== fileId),
@@ -132,20 +215,33 @@ export const useCompletion = () => {
   }, []);
 
   const clearFiles = useCallback(() => {
+    discardAttachments();
     setState((prev) => ({ ...prev, attachedFiles: [] }));
+  }, [discardAttachments]);
+
+  const dismissAttachmentNotices = useCallback(() => {
+    setAttachmentNotices([]);
   }, []);
 
   const submit = useCallback(
     async (speechText?: string) => {
-      const input = speechText || state.input;
-
-      // Allow submission if there's text OR attached files (images/screenshots)
-      if (!input.trim() && state.attachedFiles.length === 0) {
+      // Files still being read would otherwise be left out of this message and
+      // turn up attached to the next one: send once they're ready.
+      if (pendingReadsRef.current > 0) {
+        queuedSubmitRef.current = { speechText };
         return;
       }
 
-      // If no text but has images, use a default prompt
-      const userMessage = input.trim() || "What's in this image?";
+      const input = speechText || state.input;
+      const attachments = state.attachedFiles;
+
+      // Allow submission if there's text OR attached files
+      if (!input.trim() && attachments.length === 0) {
+        return;
+      }
+
+      // If there's no text, ask about the attachments
+      const userMessage = input.trim() || defaultPromptFor(attachments);
 
       if (speechText) {
         setState((prev) => ({
@@ -167,21 +263,22 @@ export const useCompletion = () => {
       const signal = abortControllerRef.current.signal;
 
       try {
-        // Prepare message history for the AI
+        // Prepare message history for the AI. Text files attached earlier in
+        // the conversation are included again so follow-ups can refer to them.
         const messageHistory = state.conversationHistory.map((msg) => ({
           role: msg.role,
-          content: msg.content,
+          content:
+            msg.role === "user"
+              ? buildPromptWithTextFiles(msg.content, msg.attachedFiles)
+              : msg.content,
         }));
 
-        // Handle image attachments
-        const imagesBase64: string[] = [];
-        if (state.attachedFiles.length > 0) {
-          state.attachedFiles.forEach((file) => {
-            if (file.type.startsWith("image/")) {
-              imagesBase64.push(file.base64);
-            }
-          });
-        }
+        // Images go as image parts with their real format; text and code
+        // files go inside the message.
+        const images = attachments
+          .filter(isImageAttachment)
+          .map((file) => ({ data: file.base64, mimeType: file.type }));
+        const prompt = buildPromptWithTextFiles(userMessage, attachments);
 
         let fullResponse = "";
 
@@ -205,6 +302,14 @@ export const useCompletion = () => {
           return;
         }
 
+        // Catch what this provider can't accept before sending, with a message
+        // that says what to change. The attachments and draft are kept.
+        const attachmentError = validateAttachmentsForProvider(provider, attachments);
+        if (attachmentError) {
+          setState((prev) => ({ ...prev, error: attachmentError }));
+          return;
+        }
+
         // Clear previous response and set loading state
         setState((prev) => ({
           ...prev,
@@ -216,6 +321,9 @@ export const useCompletion = () => {
             role: "user",
             content: userMessage,
             timestamp: Date.now(),
+            ...(attachments.length > 0
+              ? { attachedFiles: toStoredAttachments(attachments) }
+              : {}),
           },
         }));
 
@@ -226,8 +334,8 @@ export const useCompletion = () => {
             selectedProvider: selectedAIProvider,
             systemPrompt: systemPrompt || undefined,
             history: messageHistory,
-            userMessage: userMessage,
-            imagesBase64,
+            userMessage: prompt,
+            images,
             signal,
           })) {
             // Only update if this is still the current request
@@ -272,16 +380,17 @@ export const useCompletion = () => {
 
         // Save the conversation after successful completion
         if (fullResponse) {
-          await saveCurrentConversation(
-            userMessage,
-            fullResponse,
-            state.attachedFiles
+          await saveCurrentConversation(userMessage, fullResponse, attachments);
+          // Clear the input and the files that were sent. A file added while
+          // the answer streamed (e.g. a screenshot shortcut) stays attached.
+          const sentIds = new Set(attachments.map((f) => f.id));
+          attachmentsRef.current = attachmentsRef.current.filter(
+            (f) => !sentIds.has(f.id)
           );
-          // Clear input and attached files after saving
           setState((prev) => ({
             ...prev,
             input: "",
-            attachedFiles: [],
+            attachedFiles: prev.attachedFiles.filter((f) => !sentIds.has(f.id)),
           }));
         }
       } catch (error) {
@@ -320,6 +429,7 @@ export const useCompletion = () => {
       return;
     }
     cancel();
+    discardAttachments();
     setState((prev) => ({
       ...prev,
       input: "",
@@ -328,20 +438,7 @@ export const useCompletion = () => {
       attachedFiles: [],
       pendingMessage: null,
     }));
-  }, [cancel, keepEngaged]);
-
-  // Helper function to convert file to base64
-  const fileToBase64 = useCallback(async (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => {
-        const base64 = (reader.result as string)?.split(",")[1] || "";
-        resolve(base64);
-      };
-      reader.onerror = reject;
-    });
-  }, []);
+  }, [cancel, keepEngaged, discardAttachments]);
 
   // Note: saveConversation, getConversationById, and generateConversationTitle
   // are now imported from lib/database/chat-history.action.ts
@@ -365,6 +462,7 @@ export const useCompletion = () => {
   }, []);
 
   const startNewConversation = useCallback(() => {
+    discardAttachments();
     setState((prev) => ({
       ...prev,
       currentConversationId: null,
@@ -376,13 +474,13 @@ export const useCompletion = () => {
       attachedFiles: [],
       pendingMessage: null,
     }));
-  }, []);
+  }, [discardAttachments]);
 
   const saveCurrentConversation = useCallback(
     async (
       userMessage: string,
       assistantResponse: string,
-      _attachedFiles: AttachedFile[]
+      attachedFiles: AttachedFile[]
     ) => {
       // Validate inputs
       if (!userMessage || !assistantResponse) {
@@ -399,6 +497,10 @@ export const useCompletion = () => {
         role: "user",
         content: userMessage,
         timestamp,
+        // Names, sizes and text-file contents; image data isn't stored.
+        ...(attachedFiles.length > 0
+          ? { attachedFiles: toStoredAttachments(attachedFiles) }
+          : {}),
       };
 
       const assistantMsg: ChatMessage = {
@@ -556,48 +658,16 @@ export const useCompletion = () => {
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    const MAX_FILES = 6;
-
-    console.log('[FILE SELECT] Selected files:', files.length);
-    console.log('[FILE SELECT] Current attached files:', state.attachedFiles.length);
-
-    let currentFileCount = state.attachedFiles.length;
-    let skippedNonImages = 0;
-
-    files.forEach((file) => {
-      console.log('[FILE SELECT] Processing file:', file.name, file.type);
-      
-      // Only accept image files
-      if (!file.type.startsWith("image/")) {
-        console.log('[FILE SELECT] Skipped non-image file:', file.name);
-        skippedNonImages++;
-        return;
-      }
-      
-      if (currentFileCount < MAX_FILES) {
-        console.log('[FILE SELECT] Adding file:', file.name);
-        addFile(file);
-        currentFileCount++; // Increment count for next iteration
-      } else {
-        console.log('[FILE SELECT] Skipped file:', file.name, 'Reason: file limit reached');
-      }
-    });
-
-    // Show warning if non-image files were selected
-    if (skippedNonImages > 0) {
-      setState((prev) => ({
-        ...prev,
-        error: `${skippedNonImages} file(s) skipped. Only image files (PNG, JPG, GIF, etc.) are supported.`,
-      }));
-    }
-
-    // Reset input so same file can be selected again
+    // Reset input so the same file can be selected again
     e.target.value = "";
+    // Notices describe the latest pick only
+    setAttachmentNotices([]);
+    void addFiles(files);
   };
 
   const handleScreenshotSubmit = useCallback(
     async (base64: string, prompt?: string) => {
-      if (state.attachedFiles.length >= MAX_FILES) {
+      if (attachmentsRef.current.length + pendingReadsRef.current >= MAX_FILES) {
         setState((prev) => ({
           ...prev,
           error: `You can only upload ${MAX_FILES} files`,
@@ -609,11 +679,12 @@ export const useCompletion = () => {
         if (prompt) {
           // Auto mode: Submit directly to AI with screenshot
           const attachedFile: AttachedFile = {
-            id: Date.now().toString(),
+            id: createAttachmentId(),
             name: `screenshot_${Date.now()}.png`,
             type: "image/png",
+            kind: "image",
             base64: base64,
-            size: base64.length,
+            size: base64ByteLength(base64),
           };
 
           // Generate unique request ID
@@ -733,18 +804,14 @@ export const useCompletion = () => {
           }
         } else {
           // Manual mode: Add to attached files
-          const attachedFile: AttachedFile = {
-            id: Date.now().toString(),
+          appendAttachment({
+            id: createAttachmentId(),
             name: `screenshot_${Date.now()}.png`,
             type: "image/png",
+            kind: "image",
             base64: base64,
-            size: base64.length,
-          };
-
-          setState((prev) => ({
-            ...prev,
-            attachedFiles: [...prev.attachedFiles, attachedFile],
-          }));
+            size: base64ByteLength(base64),
+          });
         }
       } catch (error) {
         console.error("Failed to process screenshot:", error);
@@ -759,13 +826,13 @@ export const useCompletion = () => {
       }
     },
     [
-      state.attachedFiles.length,
       state.conversationHistory,
       selectedAIProvider,
       allAiProviders,
       systemPrompt,
       saveCurrentConversation,
       inputRef,
+      appendAttachment,
     ]
   );
 
@@ -777,8 +844,13 @@ export const useCompletion = () => {
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      // Allow submission if there's text OR if there are attached files (screenshots/images)
-      if (!state.isLoading && (state.input.trim() || state.attachedFiles.length > 0)) {
+      // Allow submission if there's text OR attachments (including ones still being read)
+      if (
+        !state.isLoading &&
+        (state.input.trim() ||
+          state.attachedFiles.length > 0 ||
+          pendingAttachmentReads > 0)
+      ) {
         submit();
       }
     }
@@ -786,38 +858,33 @@ export const useCompletion = () => {
 
   const handlePaste = useCallback(
     async (e: React.ClipboardEvent) => {
-      // Check if clipboard contains images
+      // Pasted files (images, or files copied in the file manager) are
+      // attached; pasted text is left to paste into the input as usual.
       const items = e.clipboardData?.items;
       if (!items) return;
 
-      const hasImages = Array.from(items).some((item) =>
-        item.type.startsWith("image/")
-      );
+      const files = Array.from(items)
+        .filter((item) => item.kind === "file")
+        .map((item) => item.getAsFile())
+        .filter((file): file is File => file !== null);
 
-      // If we have images, prevent default text pasting and process images
-      if (hasImages) {
+      if (files.length > 0) {
         e.preventDefault();
-
-        const processedFiles: File[] = [];
-
-        Array.from(items).forEach((item) => {
-          if (
-            item.type.startsWith("image/") &&
-            state.attachedFiles.length + processedFiles.length < MAX_FILES
-          ) {
-            const file = item.getAsFile();
-            if (file) {
-              processedFiles.push(file);
-            }
-          }
-        });
-
-        // Process all files
-        await Promise.all(processedFiles.map((file) => addFile(file)));
+        setAttachmentNotices([]);
+        await addFiles(files);
       }
     },
-    [state.attachedFiles.length, addFile]
+    [addFiles]
   );
+
+  // A send that waited for files to finish reading goes out now, with them.
+  useEffect(() => {
+    if (pendingAttachmentReads === 0 && queuedSubmitRef.current) {
+      const { speechText } = queuedSubmitRef.current;
+      queuedSubmitRef.current = null;
+      void submit(speechText);
+    }
+  }, [pendingAttachmentReads, submit]);
 
   const isPopoverOpen =
     state.isLoading ||
@@ -1099,6 +1166,9 @@ export const useCompletion = () => {
     isFilesPopoverOpen,
     setIsFilesPopoverOpen,
     onRemoveAllFiles,
+    attachmentNotices,
+    dismissAttachmentNotices,
+    isReadingAttachments: pendingAttachmentReads > 0,
     inputRef,
     captureScreenshot,
     isScreenshotLoading,
