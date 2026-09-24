@@ -156,6 +156,35 @@ describe("Main overlay Message History browser", () => {
       expect(within(rowButton(list, "Primary colors")).getByText(/2 messages/)).toBeInTheDocument();
     });
 
+    it("moves a conversation back to the top after it gets a new message", async () => {
+      const user = userEvent.setup();
+      render(<Harness />);
+      const titles = (list: HTMLElement) =>
+        within(list)
+          .getAllByRole("listitem")
+          .map((li) => li.querySelector("[data-conversation-title]")!.textContent);
+
+      expect(titles(await openHistory(user))).toEqual(["Primary colors", "Binary search"]);
+      await user.click(screen.getByRole("button", { name: "Close Message History" }));
+      await waitFor(() => expect(historyIsOpen()).toBe(false));
+
+      // The older conversation receives a new exchange (as the DB returns it on refresh)
+      db.conversations = [
+        chatB,
+        {
+          ...chatA,
+          updatedAt: 1_700_001_000_001,
+          messages: [
+            ...chatA.messages,
+            message("a5", "user", "One more question", 1_700_001_000_000),
+            message("a6", "assistant", "One more answer", 1_700_001_000_001),
+          ],
+        },
+      ];
+
+      expect(titles(await openHistory(user))).toEqual(["Binary search", "Primary colors"]);
+    });
+
     it("clearly marks the current conversation", async () => {
       const user = userEvent.setup();
       render(<Harness currentConversationId="conv_a" conversationHistory={chatA.messages} />);
@@ -379,6 +408,143 @@ describe("Main overlay Message History browser", () => {
       await user.keyboard(" ");
 
       expect(await screen.findByRole("heading", { name: "Primary colors" })).toBeInTheDocument();
+    });
+  });
+
+  describe("preview → main search bar", () => {
+    /**
+     * Mirrors the real overlay: the search bar (voice bar with its mic) and the
+     * history icon both live inside the response popover's anchor.
+     */
+    const AppLikeHarness = ({
+      currentConversationId = null,
+      conversationHistory = [],
+    }: {
+      currentConversationId?: string | null;
+      conversationHistory?: ChatMessage[];
+    }) => {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button">Unrelated control</button>
+          <div data-slot="popover-anchor">
+            <div data-voice-state="idle">
+              <textarea aria-label="Search bar" />
+              <button type="button" aria-label="Start voice input" />
+            </div>
+            <MessageHistory
+              conversationHistory={conversationHistory}
+              currentConversationId={currentConversationId}
+              onStartNewConversation={vi.fn()}
+              messageHistoryOpen={open}
+              setMessageHistoryOpen={setOpen}
+            />
+          </div>
+        </>
+      );
+    };
+    const searchBar = () => screen.getByRole("textbox", { name: "Search bar" });
+    const settle = () => new Promise((r) => setTimeout(r, 80));
+
+    it("previewing a conversation then clicking the search bar makes it active and closes history", async () => {
+      const user = userEvent.setup();
+      render(<AppLikeHarness currentConversationId="conv_a" conversationHistory={chatA.messages} />);
+
+      await openConversation(user, "Primary colors");
+      await user.click(searchBar());
+
+      await waitFor(() => expect(selected).toHaveBeenCalledTimes(1));
+      expect((selected.mock.calls[0][0] as CustomEvent).detail).toEqual({ id: "conv_b" });
+      await waitFor(() => expect(historyIsOpen()).toBe(false));
+      // The click still reaches the search bar, ready for the next message
+      expect(searchBar()).toHaveFocus();
+      // Pointer press + focus are both "outside" interactions: still one load
+      await settle();
+      expect(selected).toHaveBeenCalledTimes(1);
+    });
+
+    it("focusing the search bar with the keyboard while previewing also continues it", async () => {
+      const user = userEvent.setup();
+      render(<AppLikeHarness />);
+
+      await openConversation(user, "Binary search");
+      searchBar().focus();
+
+      await waitFor(() => expect(selected).toHaveBeenCalledTimes(1));
+      expect((selected.mock.calls[0][0] as CustomEvent).detail).toEqual({ id: "conv_a" });
+      await waitFor(() => expect(historyIsOpen()).toBe(false));
+    });
+
+    it("on the Recent Conversations list, clicking the search bar only closes history", async () => {
+      const user = userEvent.setup();
+      render(<AppLikeHarness />);
+
+      await openHistory(user);
+      await user.click(searchBar());
+
+      await waitFor(() => expect(historyIsOpen()).toBe(false));
+      await settle();
+      expect(selected).not.toHaveBeenCalled();
+      expect(searchBar()).toHaveFocus();
+    });
+
+    it("previewing then clicking somewhere else closes history without continuing", async () => {
+      const user = userEvent.setup();
+      render(<AppLikeHarness />);
+
+      await openConversation(user, "Binary search");
+      await user.click(screen.getByRole("button", { name: "Unrelated control" }));
+
+      await waitFor(() => expect(historyIsOpen()).toBe(false));
+      await settle();
+      expect(selected).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["the history icon", "View Conversations"],
+      ["the mic", "Start voice input"],
+    ])("previewing then clicking %s does not continue the conversation", async (_label, name) => {
+      const user = userEvent.setup();
+      render(<AppLikeHarness />);
+
+      await openConversation(user, "Binary search");
+      await user.click(screen.getByRole("button", { name }));
+
+      await settle();
+      expect(selected).not.toHaveBeenCalled();
+    });
+
+    it("previewing the already-active conversation then clicking the search bar just closes history", async () => {
+      const user = userEvent.setup();
+      render(<AppLikeHarness currentConversationId="conv_a" conversationHistory={chatA.messages} />);
+
+      await openConversation(user, "Binary search");
+      await user.click(searchBar());
+
+      await waitFor(() => expect(historyIsOpen()).toBe(false));
+      await settle();
+      expect(selected).not.toHaveBeenCalled();
+    });
+
+    it("Continue chat, Close and Escape behave as before in the real layout", async () => {
+      const user = userEvent.setup();
+      render(<AppLikeHarness />);
+
+      await openConversation(user, "Binary search");
+      await user.keyboard("{Escape}");
+      await waitFor(() => expect(historyIsOpen()).toBe(false));
+
+      await openConversation(user, "Binary search");
+      await user.click(screen.getByRole("button", { name: "Close Message History" }));
+      await waitFor(() => expect(historyIsOpen()).toBe(false));
+      await settle();
+      expect(selected).not.toHaveBeenCalled();
+
+      await openConversation(user, "Primary colors");
+      await user.click(screen.getByRole("button", { name: "Continue chat" }));
+      await waitFor(() => expect(selected).toHaveBeenCalledTimes(1));
+      expect((selected.mock.calls[0][0] as CustomEvent).detail).toEqual({ id: "conv_b" });
+      await waitFor(() => expect(historyIsOpen()).toBe(false));
     });
   });
 });

@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentProps,
   type KeyboardEvent,
 } from "react";
 import { useHistory } from "@/hooks/useHistory";
@@ -21,6 +22,7 @@ import {
 import {
   displayTitle,
   pluralize,
+  sortConversationsByRecent,
 } from "@/pages/app/components/message-history/message-history.utils";
 
 interface MessageHistoryProps {
@@ -33,6 +35,13 @@ interface MessageHistoryProps {
 
 const iconButton =
   "size-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground";
+
+/**
+ * The main search bar: the voice/text bar inside the response popover's
+ * anchor. The anchor also wraps the history icon and the mic, so match the bar
+ * itself rather than the whole anchor.
+ */
+const MAIN_SEARCH_BAR = '[data-slot="popover-anchor"] [data-voice-state]';
 
 /**
  * Overlay conversation browser: Recent Conversations → a conversation's Q&A.
@@ -64,18 +73,22 @@ export const MessageHistory = ({
   const backButtonRef = useRef<HTMLButtonElement>(null);
   // Row to refocus when returning from a conversation to the list
   const returnFocusIdRef = useRef<string | null>(null);
+  // Radix reports both the pointerdown and the resulting focus as outside
+  // interactions; continue a previewed conversation at most once per open.
+  const continuedFromSearchBarRef = useRef(false);
 
   // Every open starts at Recent Conversations with fresh data.
   useEffect(() => {
     if (messageHistoryOpen) {
       setOpenConversationId(null);
       returnFocusIdRef.current = null;
+      continuedFromSearchBarRef.current = false;
       refreshConversations();
     }
   }, [messageHistoryOpen, refreshConversations]);
 
   const recentConversations = useMemo(
-    () => [...conversations].sort((a, b) => b.updatedAt - a.updatedAt),
+    () => sortConversationsByRecent(conversations),
     [conversations]
   );
   const openConversation = openConversationId
@@ -122,6 +135,24 @@ export const MessageHistory = ({
     },
     [close]
   );
+
+  // Clicking or focusing the main search bar while previewing a conversation
+  // means "continue this one": hand it to the main input through the same
+  // Continue chat path. Anything else keeps Radix's normal dismiss, and the
+  // click/focus itself still reaches the search bar (no preventDefault).
+  const handleInteractOutside: ComponentProps<
+    typeof TransparentPopoverContent
+  >["onInteractOutside"] = (event) => {
+    const target = event.target;
+    if (!openConversationId || continuedFromSearchBarRef.current) return;
+    if (!(target instanceof Element)) return;
+    if (!target.closest(MAIN_SEARCH_BAR) || target.closest("button")) return;
+
+    continuedFromSearchBarRef.current = true;
+    // Already the active conversation: just close, keeping its state (and any draft).
+    if (openConversationId === currentConversationId) return;
+    handleContinue(openConversationId);
+  };
 
   const handleConfirmDelete = useCallback(async () => {
     const deletingOpenConversation = deleteConfirm === openConversationId;
@@ -181,6 +212,7 @@ export const MessageHistory = ({
           side="bottom"
           className="select-none w-screen p-0 mt-3 overflow-hidden rounded-2xl border border-input/40"
           aria-label={openConversation ? "Conversation" : "Recent Conversations"}
+          onInteractOutside={handleInteractOutside}
         >
           {openConversation ? (
             <header className="flex items-center gap-1 border-b border-border/40 px-2 py-2">

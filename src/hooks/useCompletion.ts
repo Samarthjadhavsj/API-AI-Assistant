@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useWindowResize } from "./useWindow";
+import { useChatAutoScroll } from "./useChatAutoScroll";
 import { useGlobalShortcuts } from "@/hooks";
 import { invokeVoiceShortcutToggle } from "@/hooks/useVoiceInput";
 import { MAX_FILES } from "@/config";
@@ -50,6 +51,8 @@ interface CompletionState {
   attachedFiles: AttachedFile[];
   currentConversationId: string | null;
   conversationHistory: ChatMessage[];
+  /** The question just sent, shown until its exchange is saved to history. */
+  pendingMessage: ChatMessage | null;
 }
 
 export const useCompletion = () => {
@@ -70,6 +73,7 @@ export const useCompletion = () => {
     attachedFiles: [],
     currentConversationId: null,
     conversationHistory: [],
+    pendingMessage: null,
   });
   const [messageHistoryOpen, setMessageHistoryOpen] = useState(false);
   const [isFilesPopoverOpen, setIsFilesPopoverOpen] = useState(false);
@@ -207,6 +211,12 @@ export const useCompletion = () => {
           isLoading: true,
           error: null,
           response: "",
+          pendingMessage: {
+            id: `pending_${Date.now()}`,
+            role: "user",
+            content: userMessage,
+            timestamp: Date.now(),
+          },
         }));
 
         try {
@@ -316,6 +326,7 @@ export const useCompletion = () => {
       response: "",
       error: null,
       attachedFiles: [],
+      pendingMessage: null,
     }));
   }, [cancel, keepEngaged]);
 
@@ -349,6 +360,7 @@ export const useCompletion = () => {
       response: lastAssistantMessage?.content || "",
       error: null,
       isLoading: false,
+      pendingMessage: null,
     }));
   }, []);
 
@@ -362,6 +374,7 @@ export const useCompletion = () => {
       error: null,
       isLoading: false,
       attachedFiles: [],
+      pendingMessage: null,
     }));
   }, []);
 
@@ -430,6 +443,7 @@ export const useCompletion = () => {
           ...prev,
           currentConversationId: conversationId,
           conversationHistory: newMessages,
+          pendingMessage: null,
         }));
       } catch (error) {
         console.error("Failed to save conversation:", error);
@@ -650,6 +664,12 @@ export const useCompletion = () => {
               isLoading: true,
               error: null,
               response: "",
+              pendingMessage: {
+                id: `pending_${Date.now()}`,
+                role: "user",
+                content: prompt,
+                timestamp: Date.now(),
+              },
             }));
 
             // Use the fetchAIResponse function with image and signal
@@ -816,26 +836,17 @@ export const useCompletion = () => {
     isFilesPopoverOpen,
   ]);
 
-  // Auto scroll to bottom when response updates
-  useEffect(() => {
-    const responseSettings = getResponseSettings();
-    if (
-      !keepEngaged &&
-      state.response &&
-      scrollAreaRef.current &&
-      responseSettings.autoScroll
-    ) {
-      const scrollElement = scrollAreaRef.current.querySelector(
-        "[data-radix-scroll-area-viewport]"
-      );
-      if (scrollElement) {
-        scrollElement.scrollTo({
-          top: scrollElement.scrollHeight,
-          behavior: "smooth",
-        });
-      }
-    }
-  }, [state.response, keepEngaged]);
+  // Keep the newest exchange in view in both answer and conversation modes:
+  // sending scrolls to the bottom, streaming follows only while the reader is
+  // at the bottom, and reading older messages is never interrupted.
+  useChatAutoScroll({
+    scrollAreaRef,
+    isOpen: isPopoverOpen,
+    isLoading: state.isLoading,
+    contentKey: `${keepEngaged}:${state.response.length}:${state.conversationHistory.length}:${state.pendingMessage?.id ?? ""}`,
+    conversationKey: state.currentConversationId,
+    isFollowEnabled: () => getResponseSettings().autoScroll,
+  });
 
   // Keyboard arrow key support for scrolling
   useEffect(() => {
@@ -1055,6 +1066,7 @@ export const useCompletion = () => {
     setState,
     currentConversationId: state.currentConversationId,
     conversationHistory: state.conversationHistory,
+    pendingMessage: state.pendingMessage,
     loadConversation,
     startNewConversation,
     messageHistoryOpen,

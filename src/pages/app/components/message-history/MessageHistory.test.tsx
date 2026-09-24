@@ -338,6 +338,28 @@ describe("Toggle Settings → Message History", () => {
   });
 
   describe("list states", () => {
+    it("lists the most recently updated conversation first, oldest last", async () => {
+      const newest = conversation("c3", "Newest chat", ["Latest question", "Latest answer"]);
+      newest.updatedAt = 1_800_000_000_001;
+      newest.messages = newest.messages.map((m, i) => ({ ...m, timestamp: 1_800_000_000_000 + i }));
+      const oldest = conversation("c0", "Oldest chat", ["Very old question", "Very old answer"]);
+      oldest.updatedAt = 1_600_000_000_001;
+      oldest.messages = oldest.messages.map((m, i) => ({ ...m, timestamp: 1_600_000_000_000 + i }));
+      // The DB hands them back out of order; the list must still be recent-first.
+      db.conversations = [oldest, ...db.conversations, newest];
+      renderAt("/toggle/settings/history");
+
+      const rows = within(await list()).getAllByRole("listitem");
+      expect(rows[0]).toHaveTextContent("Newest chat");
+      expect(rows[rows.length - 1]).toHaveTextContent("Oldest chat");
+
+      // Opening it still shows its messages oldest → newest
+      fireEvent.click(within(rows[0]).getByText("Newest chat"));
+      const question = await screen.findByText("Latest question");
+      const answer = screen.getByText("Latest answer");
+      expect(question.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
     it("shows the empty state with Delete All disabled when there is no history", async () => {
       db.conversations = [];
       renderAt("/toggle/settings/history");
