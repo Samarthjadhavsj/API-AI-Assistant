@@ -1,11 +1,12 @@
 import { HistoryIcon, Trash2 } from "lucide-react";
 import moment from "moment";
+import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Badge, Button, Empty } from "@/components";
 import { useHistory } from "@/hooks/useHistory";
 import { DeleteConfirmationDialog } from "@/pages/chats/components/DeleteConfirmation";
 import { MESSAGE_HISTORY_ROUTE } from "./message-history.constants";
-import { displayTitle, pluralize } from "./message-history.utils";
+import { displayTitle, pluralize, sortConversationsByRecent } from "./message-history.utils";
 
 /** Conversation list shown under Toggle Settings → Message History. */
 export const MessageHistorySettings = () => {
@@ -26,6 +27,11 @@ export const MessageHistorySettings = () => {
 
   const pendingDelete = conversations.find((c) => c.id === deleteConfirm);
   const count = conversations.length;
+  // Same recent-first order as the main History popover.
+  const recentConversations = useMemo(
+    () => sortConversationsByRecent(conversations),
+    [conversations]
+  );
 
   return (
     // The settings ScrollArea sizes its content to the widest child, so cap the
@@ -57,7 +63,7 @@ export const MessageHistorySettings = () => {
         />
       ) : (
         <ul aria-label="Conversations" className="space-y-2">
-          {conversations.map((conversation) => {
+          {recentConversations.map((conversation) => {
             const title = displayTitle(conversation.title);
             return (
               <li

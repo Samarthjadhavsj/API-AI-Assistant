@@ -10,9 +10,10 @@ import {
 } from "@/components";
 import { TransparentPopoverContent } from "@/components/ui/popover";
 import { UseCompletionReturn } from "@/types";
+import type { ChatMessage } from "@/types/completion";
 import { MessageHistory } from "./MessageHistory";
 import { VoiceInputBar, VoiceUiState } from "./VoiceInputBar";
-import { useState, useEffect, useRef, type ComponentProps } from "react";
+import { useState, useEffect, useMemo, useRef, type ComponentProps } from "react";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { useApp } from "@/contexts";
 import { invoke } from "@tauri-apps/api/core";
@@ -28,6 +29,7 @@ export const Input = ({
   handlePaste,
   currentConversationId,
   conversationHistory,
+  pendingMessage,
   startNewConversation,
   messageHistoryOpen,
   setMessageHistoryOpen,
@@ -251,6 +253,13 @@ export const Input = ({
     };
   }, []);
 
+  // Conversation mode reads top → bottom, oldest → newest. Sort a copy: sorting
+  // the state array in place would reorder the history sent to the AI.
+  const chronologicalHistory = useMemo(
+    () => [...conversationHistory].sort((a, b) => a.timestamp - b.timestamp),
+    [conversationHistory]
+  );
+
   // The response panel is opened by completion state, never by clicking, so the
   // input bar only anchors its position. Using the bar as a PopoverTrigger made
   // every click in it (input, Message History, attachments) toggle the panel
@@ -272,6 +281,40 @@ export const Input = ({
       event.preventDefault();
     }
   };
+
+  const renderThreadMessage = (message: ChatMessage) => (
+    <div
+      key={message.id}
+      className={`p-3 rounded-lg text-sm ${message.role === "user" ? "border-l-4 border-primary" : ""}`}
+      data-role={message.role}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-xs font-medium text-muted-foreground uppercase">
+          {message.role === "user" ? "You" : "AI"}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          {new Date(message.timestamp).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+        </span>
+      </div>
+      <Markdown>{message.content}</Markdown>
+    </div>
+  );
+
+  const renderGenerating = () => (
+    <div className="flex items-center gap-2 my-4 text-muted-foreground animate-pulse select-none">
+      <Loader2 className="h-4 w-4 animate-spin" />
+      <span className="text-sm">Generating response...</span>
+    </div>
+  );
+
+  const renderError = () => (
+    <div className="mb-4 p-3 border border-destructive/20 rounded text-sm text-destructive">
+      <strong>Error:</strong> {error}
+    </div>
+  );
 
   return (
     <div className="relative flex-1">
@@ -386,54 +429,32 @@ export const Input = ({
 
           <ScrollArea ref={scrollAreaRef} className="h-[calc(100vh-7rem)]">
             <div className="p-4">
-              {error && (
-                <div className="mb-4 p-3 border border-destructive/20 rounded text-sm text-destructive">
-                  <strong>Error:</strong> {error}
-                </div>
-              )}
-              {isLoading && (
-                <div className="flex items-center gap-2 my-4 text-muted-foreground animate-pulse select-none">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span className="text-sm">Generating response...</span>
-                </div>
-              )}
-              {response && <Markdown>{response}</Markdown>}
-
-              {keepEngaged && conversationHistory.length > 1 && (
-                <div className="space-y-3 pt-3">
-                  {conversationHistory
-                    .sort((a, b) => b?.timestamp - a?.timestamp)
-                    .map((message, index) => {
-                      if (!isLoading && index === 0) {
-                        return null;
-                      }
-                      return (
-                        <div
-                          key={message.id}
-                          className={`p-3 rounded-lg text-sm ${message.role === "user"
-                              ? "border-l-4 border-primary"
-                              : ""
-                            }`}
-                        >
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className="text-xs font-medium text-muted-foreground uppercase">
-                              {message.role === "user" ? "You" : "AI"}
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              {new Date(message.timestamp).toLocaleTimeString(
-                                [],
-                                {
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                }
-                              )}
-                            </span>
-                          </div>
-                          <Markdown>{message.content}</Markdown>
-                        </div>
-                      );
+              {keepEngaged ? (
+                // Conversation: history oldest → newest, then the question just
+                // sent and its streaming answer at the bottom.
+                <div className="space-y-3" data-testid="conversation-thread">
+                  {chronologicalHistory.map(renderThreadMessage)}
+                  {pendingMessage && renderThreadMessage(pendingMessage)}
+                  {pendingMessage &&
+                    response &&
+                    renderThreadMessage({
+                      id: `${pendingMessage.id}_answer`,
+                      role: "assistant",
+                      content: response,
+                      timestamp: pendingMessage.timestamp,
                     })}
+                  {!pendingMessage &&
+                    chronologicalHistory.length === 0 &&
+                    response && <Markdown>{response}</Markdown>}
+                  {isLoading && !response && renderGenerating()}
+                  {error && renderError()}
                 </div>
+              ) : (
+                <>
+                  {error && renderError()}
+                  {isLoading && renderGenerating()}
+                  {response && <Markdown>{response}</Markdown>}
+                </>
               )}
             </div>
           </ScrollArea>

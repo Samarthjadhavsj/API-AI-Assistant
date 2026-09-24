@@ -6,6 +6,7 @@ import {
   ChangeEvent,
   ClipboardEvent,
 } from "react";
+import type { ChatMessage } from "./completion";
 // import {
 //   AttachedFile,
 //   ChatMessage,
@@ -64,6 +65,8 @@ export interface UseCompletionReturn {
   currentConversationId: string | null;
   /** Array of messages in the current conversation */
   conversationHistory: any[];
+  /** The question just sent, shown until its exchange is saved to history. */
+  pendingMessage: ChatMessage | null;
   /** Function to load an existing conversation */
   loadConversation: (conversation: any) => void;
   /** Function to start a new conversation (clears current state) */

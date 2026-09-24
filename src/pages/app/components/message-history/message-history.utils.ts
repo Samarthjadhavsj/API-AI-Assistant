@@ -1,4 +1,5 @@
 import moment from "moment";
+import type { ChatConversation } from "@/types/completion";
 
 const MAX_TITLE_LENGTH = 120;
 
@@ -30,3 +31,30 @@ export const formatConversationDate = (timestamp: number, now: number = Date.now
   if (date.isSameOrAfter(today.clone().subtract(6, "days"))) return date.format("dddd");
   return date.isSame(moment(now), "year") ? date.format("MMM D") : date.format("MMM D, YYYY");
 };
+
+/**
+ * When a conversation last had activity: the newer of its `updatedAt` and its
+ * newest message. The stored `updated_at` is maintained by a DB trigger on
+ * message inserts, so it normally equals the newest message — taking the max
+ * keeps the order right even if the two ever drift.
+ */
+export const lastActivityAt = (conversation: ChatConversation): number =>
+  conversation.messages.reduce(
+    (latest, message) => Math.max(latest, message.timestamp),
+    conversation.updatedAt || 0
+  );
+
+/**
+ * Recent-first order for conversation lists: most recent activity on top,
+ * oldest at the bottom. Equal timestamps fall back to id (descending) so the
+ * order is deterministic. Returns a new array; the input and each
+ * conversation's messages (oldest → newest) are left untouched.
+ */
+export const sortConversationsByRecent = (
+  conversations: readonly ChatConversation[]
+): ChatConversation[] =>
+  [...conversations].sort(
+    (a, b) =>
+      lastActivityAt(b) - lastActivityAt(a) ||
+      (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)
+  );
