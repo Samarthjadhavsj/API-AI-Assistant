@@ -139,15 +139,40 @@ export async function* fetchAIResponse(params: {
       SYSTEM_PROMPT: enhancedSystemPrompt || "",
     };
 
+    const template: any = curlJson.data ? JSON.parse(JSON.stringify(curlJson.data)) : {};
+    const messagesKey = Object.keys(template).find((key) =>
+      ["messages", "contents", "conversation", "history"].includes(key)
+    );
+
+    // A custom endpoint may take the message outside a messages list (e.g.
+    // "prompt": "{{TEXT}}"). Those spots are marked in the template itself
+    // and filled last, so "{{TEXT}}" inside a filled-in value (a system
+    // prompt, say) and the text the user typed are both left as written.
+    const TEXT_SLOT = "\u0000TEXT\u0000";
+    const mapStrings = (node: any, fn: (text: string) => string): any =>
+      typeof node === "string"
+        ? fn(node)
+        : Array.isArray(node)
+          ? node.map((item) => mapStrings(item, fn))
+          : node && typeof node === "object"
+            ? Object.fromEntries(Object.entries(node).map(([k, v]) => [k, mapStrings(v, fn)]))
+            : node;
+    const isOutsideMessages = (key: string) => key !== messagesKey || !Array.isArray(template[key]);
+    for (const key of Object.keys(template)) {
+      if (isOutsideMessages(key)) {
+        template[key] = mapStrings(template[key], (text) => text.replace(/\{\{TEXT\}\}/g, TEXT_SLOT));
+      }
+    }
+
     // Fill in the template's variables before inserting the conversation, so
     // "{{API_KEY}}" or "{{MODEL}}" typed in a message or an attached file stays
     // as written instead of being replaced with the real key or model.
-    let bodyObj: any = curlJson.data
-      ? deepVariableReplacer(JSON.parse(JSON.stringify(curlJson.data)), allVariables)
-      : {};
-    const messagesKey = Object.keys(bodyObj).find((key) =>
-      ["messages", "contents", "conversation", "history"].includes(key)
-    );
+    let bodyObj: any = deepVariableReplacer(template, allVariables);
+    for (const key of Object.keys(bodyObj)) {
+      if (isOutsideMessages(key)) {
+        bodyObj[key] = mapStrings(bodyObj[key], (text) => text.split(TEXT_SLOT).join(userMessage));
+      }
+    }
 
     if (messagesKey && Array.isArray(bodyObj[messagesKey])) {
       const finalMessages = buildDynamicMessages(

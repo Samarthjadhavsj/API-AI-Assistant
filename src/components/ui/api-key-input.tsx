@@ -10,6 +10,9 @@ interface ApiKeyInputProps {
   className?: string;
   placeholder?: string;
   disabled?: boolean;
+  id?: string;
+  "aria-label"?: string;
+  "aria-describedby"?: string;
 }
 
 export function ApiKeyInput({ value, onChange, className, ...props }: ApiKeyInputProps) {

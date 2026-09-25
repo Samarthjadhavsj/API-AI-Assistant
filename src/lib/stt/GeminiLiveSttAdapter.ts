@@ -1,16 +1,31 @@
 import { AudioArtifact, SttAdapter, SttResult } from "@/lib/voice/types";
 import { voiceError } from "@/lib/voice/errors";
+import {
+  geminiLiveProfileFor,
+  type GeminiLiveVoiceProfile,
+} from "@/config/gemini-models.constants";
+import { formatGeminiLiveError } from "@/lib/functions/gemini-live-stt.function";
 
 const GEMINI_LIVE_MODEL = "gemini-3.5-transcribe-live";
 const WEBSOCKET_URL_TEMPLATE = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key={API_KEY}";
+
+const SEGMENTS_PROFILE: GeminiLiveVoiceProfile = { responseModality: "TEXT", transcript: "segments" };
+/** 100 ms of 16 kHz 16-bit mono silence. */
+const SILENCE_CHUNK_MS = 100;
+const SILENCE_CHUNK_BYTES = 3200;
+const DEFAULT_SETTLE_MS = 800;
+/** Upper bound on waiting for the transcript after speech ends. */
+const MAX_WAIT_AFTER_END_MS = 12_000;
 
 interface GeminiLiveSetupMessage {
   setup: {
     model: string;
     generationConfig: {
       responseModalities: string[];
+      thinkingConfig?: { thinkingLevel: string };
     };
     inputAudioTranscription: Record<string, unknown>;
+    realtimeInputConfig?: { automaticActivityDetection: { disabled: boolean } };
   };
 }
 
@@ -31,26 +46,46 @@ interface GeminiLiveStreamEndMessage {
 
 interface GeminiLiveServerContent {
   inputTranscription?: {
-    text: string;
+    text?: string;
   };
   interimInputTranscription?: {
     text: string;
   };
+  turnComplete?: boolean;
 }
 
 interface GeminiLiveServerMessage {
+  setupComplete?: unknown;
   serverContent?: GeminiLiveServerContent;
 }
 
 /**
  * Gemini Live API transcription adapter using WebSocket for real-time streaming.
- * Connects to gemini-3.5-transcribe-live model for low-latency speech-to-text.
+ *
+ * How a model is driven depends on its profile (see gemini-models.constants):
+ * - "segments" (Transcribe Live): text responses, Gemini's own voice activity
+ *   detection, interim + final transcript segments.
+ * - "stream" (native-audio / conversational Live models): the response modality
+ *   the model accepts, speech start/end marked explicitly (so Done ends the
+ *   turn at once), transcript deltas appended as sent, and the result returned
+ *   once no more transcript arrives. The model's spoken reply is ignored.
  */
 export class GeminiLiveSttAdapter implements SttAdapter {
   readonly kind = "live-websocket" as const;
   private readonly apiKey: string;
   private readonly model: string;
+  private readonly profile: GeminiLiveVoiceProfile;
   private websocket: WebSocket | null = null;
+  // "stream" profile state
+  private setupComplete = false;
+  private pendingChunks: ArrayBuffer[] = [];
+  private endRequested = false;
+  private activityEnded = false;
+  private streamTranscript = "";
+  private settleTimer: ReturnType<typeof setTimeout> | null = null;
+  private maxWaitTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Bumped by close(), so an in-flight trailing-silence loop stops. */
+  private session = 0;
   private currentTranscript = "";
   /** Finalized segments accumulated for this session. */
   private committedTranscript = "";
@@ -68,10 +103,16 @@ export class GeminiLiveSttAdapter implements SttAdapter {
 
   constructor(
     readonly providerId: string,
-    variables: Record<string, string>
+    variables: Record<string, string>,
+    profile?: GeminiLiveVoiceProfile
   ) {
     this.apiKey = variables.api_key || "";
-    this.model = variables.model || GEMINI_LIVE_MODEL;
+    this.model = variables.model?.trim() || GEMINI_LIVE_MODEL;
+    this.profile = profile ?? geminiLiveProfileFor(this.model) ?? SEGMENTS_PROFILE;
+  }
+
+  private get isStream(): boolean {
+    return this.profile.transcript === "stream";
   }
 
   private getWebSocketUrl(): string {
@@ -79,13 +120,19 @@ export class GeminiLiveSttAdapter implements SttAdapter {
   }
 
   private createSetupMessage(): GeminiLiveSetupMessage {
+    const { responseModality, thinkingLevel } = this.profile;
     return {
       setup: {
         model: `models/${this.model}`,
         generationConfig: {
-          responseModalities: ["TEXT"],
+          responseModalities: [responseModality],
+          ...(thinkingLevel ? { thinkingConfig: { thinkingLevel } } : {}),
         },
         inputAudioTranscription: {},
+        // Speech start/end are sent explicitly for these models.
+        ...(this.isStream
+          ? { realtimeInputConfig: { automaticActivityDetection: { disabled: true } } }
+          : {}),
       },
     };
   }
@@ -162,6 +209,11 @@ export class GeminiLiveSttAdapter implements SttAdapter {
 
       const message: GeminiLiveServerMessage = rawObj as GeminiLiveServerMessage;
 
+      if (this.isStream) {
+        this.handleStreamMessage(message);
+        return;
+      }
+
       const interimTranscription = message.serverContent?.interimInputTranscription;
       const finalTranscription = message.serverContent?.inputTranscription;
 
@@ -210,6 +262,100 @@ export class GeminiLiveSttAdapter implements SttAdapter {
     }
   };
 
+  // --- "stream" profile ------------------------------------------------------
+
+  private handleStreamMessage(message: GeminiLiveServerMessage): void {
+    if (message.setupComplete !== undefined && !this.setupComplete) {
+      this.setupComplete = true;
+      this.sendJson({ realtimeInput: { activityStart: {} } });
+      const pending = this.pendingChunks;
+      this.pendingChunks = [];
+      pending.forEach((chunk) => this.sendJson(this.createAudioMessage(chunk)));
+      if (this.endRequested) void this.finishStream();
+      return;
+    }
+
+    const serverContent = message.serverContent;
+    const delta = serverContent?.inputTranscription?.text;
+    if (typeof delta === "string" && delta) {
+      // Deltas carry their own spacing (" What", " co", "lor").
+      this.streamTranscript += delta;
+      this.currentTranscript = this.streamTranscript.replace(/\s+/g, " ").trim();
+      this.onPartialCallback?.(this.currentTranscript);
+      if (this.activityEnded) this.scheduleSettle();
+    }
+
+    if (serverContent?.turnComplete && this.activityEnded && this.currentTranscript) {
+      this.resolveStream();
+    }
+  }
+
+  private sendJson(message: unknown): void {
+    if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+      this.websocket.send(JSON.stringify(message));
+    }
+  }
+
+  /** Ends the speech turn: optional real-time trailing silence, then activityEnd. */
+  private async finishStream(): Promise<void> {
+    const session = this.session;
+    const silenceMs = this.profile.trailingSilenceMs ?? 0;
+    const silence = new ArrayBuffer(SILENCE_CHUNK_BYTES);
+    for (let sent = 0; sent < silenceMs; sent += SILENCE_CHUNK_MS) {
+      if (session !== this.session) return;
+      this.sendJson(this.createAudioMessage(silence));
+      await new Promise((resolve) => setTimeout(resolve, SILENCE_CHUNK_MS));
+    }
+    if (session !== this.session) return;
+
+    this.sendJson({ realtimeInput: { activityEnd: {} } });
+    this.activityEnded = true;
+    if (this.currentTranscript) this.scheduleSettle();
+    this.maxWaitTimer = setTimeout(() => {
+      if (this.currentTranscript) {
+        this.resolveStream();
+      } else {
+        const reject = this.rejectTranscription;
+        this.resolveTranscription = null;
+        this.rejectTranscription = null;
+        this.close();
+        reject?.(new Error(voiceError("no_speech_detected").message));
+      }
+    }, MAX_WAIT_AFTER_END_MS);
+  }
+
+  /** The transcript is complete once no more of it arrives for a moment. */
+  private scheduleSettle(): void {
+    if (this.settleTimer) clearTimeout(this.settleTimer);
+    this.settleTimer = setTimeout(
+      () => this.resolveStream(),
+      this.profile.settleMs ?? DEFAULT_SETTLE_MS
+    );
+  }
+
+  private resolveStream(): void {
+    const resolve = this.resolveTranscription;
+    if (!resolve) return;
+    const text = this.currentTranscript;
+    this.resolveTranscription = null;
+    this.rejectTranscription = null;
+    resolve({ text, providerId: this.providerId });
+    // Close after resolving (not before).
+    this.close();
+  }
+
+  /** A setup rejection (unknown model, wrong modality) explained, not "no speech". */
+  private closeError(event: Event): Error | null {
+    const { code, reason } = event as CloseEvent;
+    if (typeof code !== "number" || code === 1000 || code === 1005 || !reason) return null;
+    if (/not found|not supported for bidiGenerateContent/i.test(reason)) {
+      return new Error(
+        `The voice model "${this.model}" isn't available for this API key. Choose another model in Settings.`
+      );
+    }
+    return formatGeminiLiveError(reason);
+  }
+
   private handleWebSocketError = (error: Event) => {
     console.error("[GeminiLiveSttAdapter] WebSocket error:", error);
     // Clear handlers to prevent onclose from overriding the error
@@ -224,8 +370,9 @@ export class GeminiLiveSttAdapter implements SttAdapter {
     transcribeReject?.(new Error("WebSocket connection failed"));
   };
 
-  private handleWebSocketClose = () => {
+  private handleWebSocketClose = (event: Event) => {
     this.websocket = null;
+    this.clearStreamTimers();
 
     // Only resolve/reject if not already handled by abort or final transcript
     if (this.resolveTranscription && this.rejectTranscription) {
@@ -242,7 +389,7 @@ export class GeminiLiveSttAdapter implements SttAdapter {
         });
       } else {
         const error = voiceError("no_speech_detected");
-        reject(new Error(error.message));
+        reject(this.closeError(event) ?? new Error(error.message));
       }
     }
   };
@@ -319,8 +466,12 @@ export class GeminiLiveSttAdapter implements SttAdapter {
       console.log("[GeminiLiveSttAdapter] Sending audio data, size:", arrayBuffer.byteLength);
 
       // Send audio as single chunk (could be chunked further for optimization)
-      const audioMessage = this.createAudioMessage(arrayBuffer);
-      this.websocket?.send(JSON.stringify(audioMessage));
+      if (this.isStream) {
+        this.sendAudioChunk(arrayBuffer);
+      } else {
+        const audioMessage = this.createAudioMessage(arrayBuffer);
+        this.websocket?.send(JSON.stringify(audioMessage));
+      }
 
       // Wait for transcription to complete
       const result = await transcriptionPromise;
@@ -340,6 +491,18 @@ export class GeminiLiveSttAdapter implements SttAdapter {
    * Must be called after transcribe() has initiated the WebSocket connection.
    */
   sendAudioChunk(pcmData: ArrayBuffer): void {
+    // Stream models: hold audio until setup completes and speech has been
+    // marked as started, so the first words aren't lost.
+    if (this.isStream) {
+      if (pcmData.byteLength === 0) return;
+      if (!this.setupComplete) {
+        this.pendingChunks.push(pcmData);
+        return;
+      }
+      this.sendJson(this.createAudioMessage(pcmData));
+      return;
+    }
+
     if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
       console.warn("[GeminiLiveSttAdapter] Cannot send chunk: WebSocket not open");
       return;
@@ -361,6 +524,15 @@ export class GeminiLiveSttAdapter implements SttAdapter {
    * This allows Gemini to finalize the transcription immediately.
    */
   sendAudioStreamEnd(): void {
+    if (this.isStream) {
+      if (this.endRequested || this.activityEnded) return;
+      this.isStreamEnded = true;
+      this.endRequested = true;
+      // Before setup completes, the end is sent once buffered audio is flushed.
+      if (this.setupComplete) void this.finishStream();
+      return;
+    }
+
     const isOpen = !!this.websocket && this.websocket.readyState === WebSocket.OPEN;
 
     if (!this.websocket || !isOpen) {
@@ -397,7 +569,21 @@ export class GeminiLiveSttAdapter implements SttAdapter {
     }
   }
 
+  private clearStreamTimers(): void {
+    if (this.settleTimer) clearTimeout(this.settleTimer);
+    if (this.maxWaitTimer) clearTimeout(this.maxWaitTimer);
+    this.settleTimer = null;
+    this.maxWaitTimer = null;
+  }
+
   close(): void {
+    this.session += 1;
+    this.clearStreamTimers();
+    this.setupComplete = false;
+    this.pendingChunks = [];
+    this.endRequested = false;
+    this.activityEnded = false;
+    this.streamTranscript = "";
     if (this.websocket) {
       console.log("[GeminiLiveSttAdapter] Closing WebSocket connection");
       this.websocket.close();

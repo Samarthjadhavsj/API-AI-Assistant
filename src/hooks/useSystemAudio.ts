@@ -9,6 +9,7 @@ import {
   DEFAULT_QUICK_ACTIONS,
   DEFAULT_SYSTEM_PROMPT,
   GEMINI_TRANSCRIBE_MODEL,
+  GEMINI_TRANSCRIBE_PROVIDER_ID,
   STORAGE_KEYS,
 } from "@/config";
 import {
@@ -103,11 +104,18 @@ export function useSystemAudio() {
 
   const {
     selectedSttProvider,
+    voiceProviderConfigs,
     selectedAIProvider,
     allAiProviders,
     systemPrompt,
     selectedAudioDevices,
   } = useApp();
+  // System audio always transcribes with Gemini, so it uses the Gemini Voice
+  // key, never another voice provider's key.
+  const geminiVoiceApiKey =
+    selectedSttProvider.provider === GEMINI_TRANSCRIBE_PROVIDER_ID
+      ? selectedSttProvider.variables.api_key ?? ""
+      : voiceProviderConfigs?.[GEMINI_TRANSCRIBE_PROVIDER_ID]?.api_key ?? "";
   const abortControllerRef = useRef<AbortController | null>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isSavingRef = useRef<boolean>(false);
@@ -237,7 +245,7 @@ export function useSystemAudio() {
             }
             const audioBlob = new Blob([bytes], { type: "audio/wav" });
 
-            if (!selectedSttProvider.variables.api_key?.trim()) {
+            if (!geminiVoiceApiKey.trim()) {
               setError("Add your Gemini API key in Speech-to-Text settings.");
               return;
             }
@@ -247,7 +255,7 @@ export function useSystemAudio() {
             // Add timeout wrapper for STT request (30 seconds)
             const sttPromise = fetchGeminiLiveSTT(
               audioBlob,
-              selectedSttProvider.variables.api_key,
+              geminiVoiceApiKey,
               undefined,
               undefined,
               GEMINI_TRANSCRIBE_MODEL
@@ -309,7 +317,7 @@ export function useSystemAudio() {
     };
   }, [
     capturing,
-    selectedSttProvider,
+    geminiVoiceApiKey,
     conversation.messages.length,
   ]);
 

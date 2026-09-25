@@ -1,7 +1,8 @@
 import { TYPE_PROVIDER } from "./provider.type";
 import { ScreenshotConfig, ScreenshotMode } from "./settings";
+import type { AiProviderSettingsContext } from "./context.type";
 
-export interface UseSettingsReturn {
+export interface UseSettingsReturn extends AiProviderSettingsContext {
   screenshotConfiguration: ScreenshotConfig;
   setScreenshotConfiguration: React.Dispatch<
     React.SetStateAction<ScreenshotConfig>

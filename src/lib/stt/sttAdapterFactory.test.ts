@@ -8,6 +8,7 @@ import {
   GEMINI_TRANSCRIBE_LIVE_MODEL
 } from "@/config/stt.constants";
 import { TYPE_PROVIDER } from "@/types";
+import { GEMINI_VOICE_MODELS } from "@/config/gemini-models.constants";
 
 describe("createSttAdapter", () => {
   const mockProvider: TYPE_PROVIDER = {
@@ -270,6 +271,40 @@ describe("createSttAdapter", () => {
     });
   });
 
+  describe("Voice models from Settings", () => {
+    const withModel = (model: string) => ({
+      provider: GEMINI_TRANSCRIBE_PROVIDER_ID,
+      variables: { api_key: mockApiKey, model },
+    });
+
+    it.each(GEMINI_VOICE_MODELS.map((m) => [m.name, m.id]))(
+      "%s uses the Live adapter with its own model ID",
+      (_name, id) => {
+        const adapter = createSttAdapter(mockProvider, withModel(id));
+
+        expect(adapter).toBeInstanceOf(GeminiLiveSttAdapter);
+        expect((adapter as any).model).toBe(id);
+        expect((adapter as any).profile).toEqual(
+          GEMINI_VOICE_MODELS.find((m) => m.id === id)!.live
+        );
+      }
+    );
+
+    it("uses a custom Live model ID as entered", () => {
+      const adapter = createSttAdapter(mockProvider, withModel("gemini-live-2.5-flash"));
+
+      expect(adapter).toBeInstanceOf(GeminiLiveSttAdapter);
+      expect((adapter as any).model).toBe("gemini-live-2.5-flash");
+    });
+
+    it("sends a custom non-Live model ID to batch transcription as entered", () => {
+      const adapter = createSttAdapter(mockProvider, withModel("gemini-3.6-transcribe"));
+
+      expect(adapter).toBeInstanceOf(GeminiBatchSttAdapter);
+      expect((adapter as any).variables.model).toBe("gemini-3.6-transcribe");
+    });
+  });
+
   describe("Edge cases", () => {
     it("handles case-sensitive model comparison correctly", () => {
       const selectedProvider = {
@@ -286,7 +321,7 @@ describe("createSttAdapter", () => {
       expect(adapter).toBeInstanceOf(GeminiBatchSttAdapter);
     });
 
-    it("handles model with extra whitespace", () => {
+    it("trims whitespace around a configured model instead of dropping it", () => {
       const selectedProvider = {
         provider: GEMINI_TRANSCRIBE_PROVIDER_ID,
         variables: {
@@ -297,8 +332,8 @@ describe("createSttAdapter", () => {
 
       const adapter = createSttAdapter(mockProvider, selectedProvider);
 
-      // Should fall back to batch since whitespace doesn't match
-      expect(adapter).toBeInstanceOf(GeminiBatchSttAdapter);
+      expect(adapter).toBeInstanceOf(GeminiLiveSttAdapter);
+      expect((adapter as any).model).toBe(GEMINI_TRANSCRIBE_LIVE_MODEL);
     });
 
     it("creates new adapter instances on each call", () => {
