@@ -15,6 +15,7 @@ export type VoiceErrorCode =
   | "recorder_failed"
   | "no_audio_captured"
   | "provider_not_configured"
+  | "provider_unsupported"
   | "recording_already_active"
   | "upload_failed"
   | "polling_timeout"

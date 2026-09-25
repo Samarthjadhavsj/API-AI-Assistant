@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { useApp } from "@/contexts";
 import { createSttAdapter } from "@/lib/stt";
 import { voiceError } from "@/lib/voice/errors";
+import { voiceInputBlocker } from "@/lib/provider-status";
 import { voiceRecorderController } from "@/lib/voice/VoiceRecorderController";
 import { SttResult } from "@/lib/voice/types";
 
@@ -54,6 +55,14 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}) {
 
   const start = useCallback((deviceId?: string) => {
     const current = configuration.current;
+    // Another voice provider that can't transcribe (or isn't set up) is
+    // reported before recording, never replaced by Gemini.
+    const blocker = voiceInputBlocker(current.selectedSttProvider);
+    if (blocker) {
+      return Promise.reject(
+        voiceError(blocker.unsupported ? "provider_unsupported" : "provider_not_configured", undefined, blocker.message)
+      );
+    }
     const provider = current.allSttProviders.find(
       (item) => item.id === current.selectedSttProvider.provider
     );

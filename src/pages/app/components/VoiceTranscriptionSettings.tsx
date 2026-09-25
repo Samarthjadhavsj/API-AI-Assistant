@@ -1,115 +1,62 @@
-import { Button, Header, TextInput } from "@/components";
-import { ApiKeyInput } from "@/components/ui/api-key-input";
 import { UseSettingsReturn } from "@/types";
-import { KeyIcon, TrashIcon } from "lucide-react";
+import {
+  GEMINI_TRANSCRIBE_LIVE_MODEL,
+  GEMINI_TRANSCRIBE_PROVIDER_ID,
+} from "@/config/stt.constants";
+import { findGeminiModel, GEMINI_VOICE_MODELS } from "@/config/gemini-models.constants";
+import { findVoiceProvider } from "@/config/voice-providers.constants";
+import { GeminiVoiceSettings } from "./gemini/GeminiSettingsSections";
+import { OtherVoiceProvidersSection } from "./gemini/OtherProviderSections";
 
-export const VoiceTranscriptionSettings = ({
-  selectedSttProvider,
-  onSetSelectedSttProvider,
-}: UseSettingsReturn) => {
-  const getApiKeyValue = () => {
-    return selectedSttProvider?.variables?.api_key || "";
-  };
-
-  const getModelValue = () => {
-    return selectedSttProvider?.variables?.model ?? "";
-  };
-
-  const isApiKeyEmpty = () => {
-    return !getApiKeyValue().trim();
-  };
-
+/** Which provider transcribes voice input right now, in one line. */
+const ActiveVoiceSummary = ({ selection }: { selection: UseSettingsReturn["selectedSttProvider"] }) => {
+  const isGemini = selection.provider === GEMINI_TRANSCRIBE_PROVIDER_ID;
+  const definition = isGemini ? null : findVoiceProvider(selection.provider);
+  const name = isGemini
+    ? "Gemini Voice"
+    : definition?.id === "custom"
+      ? selection.variables.name?.trim() || "Custom"
+      : definition?.name ?? selection.provider;
+  const model = selection.variables.model?.trim();
+  const modelLabel = isGemini ? findGeminiModel(GEMINI_VOICE_MODELS, model)?.name ?? model : model;
   return (
-    <div className="space-y-3">
-      <div className="space-y-2">
-        <Header
-          title="Gemini API Key"
-          description="Enter your Gemini API key for voice transcription. Your key is stored locally and never shared."
-        />
-
-        <div className="space-y-2">
-          <div className="flex gap-2">
-            <ApiKeyInput
-              value={getApiKeyValue()}
-              onChange={(value) => {
-                if (!selectedSttProvider) return;
-
-                onSetSelectedSttProvider({
-                  ...selectedSttProvider,
-                  variables: {
-                    ...selectedSttProvider.variables,
-                    api_key: value,
-                  },
-                });
-              }}
-              className="h-11 border-1 border-input/50 focus:border-primary/50 transition-colors"
-            />
-            {isApiKeyEmpty() ? (
-              <Button
-                onClick={() => {
-                  if (!selectedSttProvider || isApiKeyEmpty()) return;
-
-                  onSetSelectedSttProvider({
-                    ...selectedSttProvider,
-                    variables: {
-                      ...selectedSttProvider.variables,
-                      api_key: getApiKeyValue(),
-                    },
-                  });
-                }}
-                disabled={isApiKeyEmpty()}
-                size="icon"
-                className="shrink-0 h-11 w-11"
-                title="Submit API Key"
-              >
-                <KeyIcon className="h-4 w-4" />
-              </Button>
-            ) : (
-              <Button
-                onClick={() => {
-                  if (!selectedSttProvider) return;
-
-                  onSetSelectedSttProvider({
-                    ...selectedSttProvider,
-                    variables: {
-                      ...selectedSttProvider.variables,
-                      api_key: "",
-                    },
-                  });
-                }}
-                size="icon"
-                variant="destructive"
-                className="shrink-0 h-11 w-11"
-                title="Remove API Key"
-              >
-                <TrashIcon className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <Header
-          title="Transcription Model"
-          description="Choose the Gemini model for speech-to-text transcription."
-        />
-        <TextInput
-          placeholder="Enter Gemini model (e.g., gemini-3.5-transcribe)"
-          value={getModelValue()}
-          onChange={(value) => {
-            if (!selectedSttProvider) return;
-
-            onSetSelectedSttProvider({
-              ...selectedSttProvider,
-              variables: {
-                ...selectedSttProvider.variables,
-                model: value,
-              },
-            });
-          }}
-        />
-      </div>
-    </div>
+    <p className="text-xs text-muted-foreground" role="status" data-testid="active-voice-provider">
+      Transcribing with <span className="font-medium text-foreground">{name}</span>
+      {modelLabel ? <> · {modelLabel}</> : null}
+    </p>
   );
 };
+
+/**
+ * Voice settings only: the built-in Gemini Voice, then another speech-to-text
+ * provider set up by hand. Each keeps its own settings; "Use …" chooses which
+ * one voice input uses.
+ */
+export const VoiceTranscriptionSettings = ({
+  selectedSttProvider,
+  voiceProviderConfigs,
+  updateVoiceProviderConfig,
+  activateVoiceProvider,
+  otherVoiceProviderId,
+  setOtherVoiceProvider,
+}: UseSettingsReturn) => (
+  <div className="space-y-4">
+    <ActiveVoiceSummary selection={selectedSttProvider} />
+    <GeminiVoiceSettings
+      variables={
+        voiceProviderConfigs[GEMINI_TRANSCRIBE_PROVIDER_ID] ?? { api_key: "", model: GEMINI_TRANSCRIBE_LIVE_MODEL }
+      }
+      onChange={(variables) => updateVoiceProviderConfig(GEMINI_TRANSCRIBE_PROVIDER_ID, variables)}
+      isActive={selectedSttProvider.provider === GEMINI_TRANSCRIBE_PROVIDER_ID}
+      onActivate={() => activateVoiceProvider(GEMINI_TRANSCRIBE_PROVIDER_ID)}
+    />
+    <OtherVoiceProvidersSection
+      configs={voiceProviderConfigs}
+      otherProviderId={otherVoiceProviderId}
+      activeProviderId={selectedSttProvider.provider}
+      onSelectProvider={setOtherVoiceProvider}
+      onChangeConfig={updateVoiceProviderConfig}
+      onActivate={activateVoiceProvider}
+    />
+  </div>
+);

@@ -1,3 +1,18 @@
+/** Display names for the built-in providers. */
+export const AI_PROVIDER_NAMES: Record<string, string> = {
+  openai: "OpenAI",
+  claude: "Claude",
+  grok: "Grok",
+  gemini: "Gemini",
+  mistral: "Mistral",
+  cohere: "Cohere",
+  groq: "Groq",
+  perplexity: "Perplexity",
+  openrouter: "OpenRouter",
+  ollama: "Ollama",
+  deepseek: "DeepSeek",
+};
+
 export const AI_PROVIDERS = [
   {
     id: "openai",

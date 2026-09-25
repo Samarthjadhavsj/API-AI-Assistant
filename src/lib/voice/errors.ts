@@ -9,6 +9,7 @@ const MESSAGES: Record<VoiceErrorCode, string> = {
   recorder_failed: "The microphone stopped unexpectedly. Please try again.",
   no_audio_captured: "No audio was captured. Please try again.",
   provider_not_configured: "Add your Gemini API key in Speech-to-Text settings before starting voice input.",
+  provider_unsupported: "The selected voice provider can't transcribe speech. Choose another in Settings → Voice Transcription.",
   recording_already_active: "Voice input is already active in another window.",
   upload_failed: "The recording could not be uploaded for transcription. Please try again.",
   polling_timeout: "The transcription service took too long to prepare the recording. Please try again.",
@@ -28,7 +29,7 @@ export function voiceError(
     code,
     message: message || MESSAGES[code],
     cause,
-    retryable: !["permission_denied", "provider_not_configured", "recording_already_active"].includes(code),
+    retryable: !["permission_denied", "provider_not_configured", "provider_unsupported", "recording_already_active"].includes(code),
   };
 }
 

@@ -25,6 +25,8 @@ import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { useApp } from "@/contexts";
 import { invoke } from "@tauri-apps/api/core";
 import { voiceErrorMessage } from "@/lib/voice/errors";
+import { voiceInputBlocker } from "@/lib/provider-status";
+import { GEMINI_TRANSCRIBE_PROVIDER_ID } from "@/config/stt.constants";
 
 export const Input = ({
   isPopoverOpen,
@@ -62,7 +64,13 @@ export const Input = ({
   const [voiceStream, setVoiceStream] = useState<MediaStream | null>(null);
   const [voiceError, setVoiceError] = useState<string>("");
   const { selectedAudioDevices, selectedSttProvider } = useApp();
-  const isProviderConfigured = Boolean(selectedSttProvider.variables.api_key?.trim());
+  // Gemini Voice needs its key; another voice provider must be supported and set up.
+  const usesGeminiVoice =
+    !selectedSttProvider.provider || selectedSttProvider.provider === GEMINI_TRANSCRIBE_PROVIDER_ID;
+  const otherVoiceBlocker = usesGeminiVoice ? null : voiceInputBlocker(selectedSttProvider);
+  const isProviderConfigured = usesGeminiVoice
+    ? Boolean(selectedSttProvider.variables.api_key?.trim())
+    : !otherVoiceBlocker;
 
   const voice = useVoiceInput({
     maxDurationMs: 3 * 60 * 1000,
@@ -108,7 +116,10 @@ export const Input = ({
 
     if (!isProviderConfigured) {
       console.warn("[VoiceInput] STT provider not configured");
-      triggerVoiceError("Voice input requires a Gemini API key. Add one in Settings → Voice Settings.");
+      triggerVoiceError(
+        otherVoiceBlocker?.message ??
+          "Voice input requires a Gemini API key. Add one in Settings → Voice Settings."
+      );
       return;
     }
 

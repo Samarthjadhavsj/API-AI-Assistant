@@ -1,7 +1,7 @@
 import {
   AI_PROVIDERS,
   DEFAULT_SYSTEM_PROMPT,
-  GEMINI_TRANSCRIBE_MODEL,
+  GEMINI_TRANSCRIBE_LIVE_MODEL,
   GEMINI_TRANSCRIBE_PROVIDER_ID,
   SPEECH_TO_TEXT_PROVIDERS,
   STORAGE_KEYS,
@@ -19,6 +19,18 @@ import {
   updateCursorType,
 } from "@/lib/storage";
 import { IContextType, ScreenshotConfig, TYPE_PROVIDER } from "@/types";
+import {
+  GEMINI_AI_PROVIDER_ID,
+  restoreAiProviderSettings,
+  restoreVoiceProviderSettings,
+  type AiProviderConfigs,
+  type ProviderVariables,
+} from "@/lib/provider-settings";
+import {
+  CUSTOM_VOICE_PROVIDER,
+  VOICE_PROVIDERS,
+  findVoiceProvider,
+} from "@/config/voice-providers.constants";
 import curl2Json from "@bany/curl-to-json";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -28,6 +40,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -65,6 +78,52 @@ const validateAndProcessCurlProviders = (
   }
 };
 
+type SttSelection = { provider: string; variables: Record<string, string> };
+
+const isVoiceProviderId = (id: string | undefined): id is string =>
+  !!id && (id === GEMINI_TRANSCRIBE_PROVIDER_ID || !!findVoiceProvider(id));
+
+const stringVariables = (value: unknown): Record<string, string> =>
+  value && typeof value === "object" && !Array.isArray(value)
+    ? Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).filter(
+          (entry): entry is [string, string] => typeof entry[1] === "string"
+        )
+      )
+    : {};
+
+/**
+ * A saved voice selection as used by voice input: a known voice provider with
+ * its own values, or Gemini Voice (older builds' providers migrate to it,
+ * keeping the API key, as before). Gemini Voice keeps { api_key, model }.
+ */
+const normalizeSttSelection = (
+  saved: { provider?: string; variables?: unknown } | null
+): SttSelection => {
+  const provider = isVoiceProviderId(saved?.provider) ? saved!.provider! : GEMINI_TRANSCRIBE_PROVIDER_ID;
+  const variables = stringVariables(saved?.variables);
+  if (provider === GEMINI_TRANSCRIBE_PROVIDER_ID) {
+    return {
+      provider,
+      variables: {
+        api_key: variables.api_key || "",
+        model: variables.model ?? GEMINI_TRANSCRIBE_LIVE_MODEL,
+      },
+    };
+  }
+  return { provider, variables };
+};
+
+/** Voice providers as provider records (Gemini Voice first), for voice input. */
+const VOICE_PROVIDER_RECORDS: TYPE_PROVIDER[] = [...VOICE_PROVIDERS, CUSTOM_VOICE_PROVIDER].map(
+  (provider) => ({
+    id: provider.id,
+    name: provider.name,
+    curl: provider.endpoint ? `curl -X POST "${provider.endpoint}"` : "",
+    streaming: false,
+  })
+);
+
 // Create the context
 const AppContext = createContext<IContextType | undefined>(undefined);
 
@@ -97,8 +156,19 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     variables: {},
   });
 
-  // STT is intentionally Gemini-only. Keep the legacy custom-provider state
-  // for backwards-compatible settings storage, but never expose it to voice.
+  // Every AI provider's own settings, so switching provider never erases them.
+  const [aiProviderConfigs, setAiProviderConfigs] = useState<AiProviderConfigs>({});
+  const aiProviderConfigsRef = useRef<AiProviderConfigs>({});
+  // The provider shown under "Other AI providers".
+  const [otherAiProviderId, setOtherAiProviderIdState] = useState("");
+  // Every voice provider's own settings (Gemini Voice included).
+  const [voiceProviderConfigs, setVoiceProviderConfigs] = useState<AiProviderConfigs>({});
+  const voiceProviderConfigsRef = useRef<AiProviderConfigs>({});
+  // The provider shown under "Other voice providers".
+  const [otherVoiceProviderId, setOtherVoiceProviderIdState] = useState("");
+
+  // Keep the legacy curl-based custom STT provider state for backwards-
+  // compatible settings storage; it isn't used for voice.
   const [customSttProviders, setCustomSttProviders] = useState<TYPE_PROVIDER[]>(
     []
   );
@@ -115,14 +185,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           provider?: string;
           variables?: Record<string, string>;
         };
-        console.log("[AppContext] Loaded STT provider from localStorage:", saved);
-        return {
-          provider: GEMINI_TRANSCRIBE_PROVIDER_ID,
-          variables: {
-            api_key: saved.variables?.api_key || "",
-            model: saved.variables?.model ?? GEMINI_TRANSCRIBE_MODEL,
-          },
-        };
+        console.log("[AppContext] Loaded STT provider from localStorage:", saved.provider);
+        return normalizeSttSelection(saved);
       }
     } catch (error) {
       console.error("[AppContext] Failed to load STT provider from localStorage:", error);
@@ -131,9 +195,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     console.log("[AppContext] Using default STT provider state");
     return {
       provider: GEMINI_TRANSCRIBE_PROVIDER_ID,
-      variables: { model: GEMINI_TRANSCRIBE_MODEL, api_key: "" },
+      variables: { model: GEMINI_TRANSCRIBE_LIVE_MODEL, api_key: "" },
     };
   });
+  const selectedSttProviderRef = useRef(selectedSttProvider);
+  selectedSttProviderRef.current = selectedSttProvider;
 
   const [screenshotConfiguration, setScreenshotConfiguration] =
     useState<ScreenshotConfig>({
@@ -196,36 +262,51 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setSelectedAIProvider(JSON.parse(savedSelectedAi));
     }
 
-    // Load selected STT provider
+    // Each provider's own settings (older installs only saved the active one)
+    let activeAi: { provider: string; variables: ProviderVariables } | null = null;
+    try {
+      activeAi = savedSelectedAi ? JSON.parse(savedSelectedAi) : null;
+    } catch {
+      activeAi = null;
+    }
+    const restoredAi = restoreAiProviderSettings({
+      configsRaw: safeLocalStorage.getItem(STORAGE_KEYS.AI_PROVIDER_CONFIGS),
+      otherProviderRaw: safeLocalStorage.getItem(STORAGE_KEYS.OTHER_AI_PROVIDER),
+      active: activeAi,
+    });
+    aiProviderConfigsRef.current = restoredAi.configs;
+    setAiProviderConfigs(restoredAi.configs);
+    setOtherAiProviderIdState(restoredAi.otherProviderId);
+
+    // Load selected STT provider (logs never include API keys)
     const savedSelectedStt = safeLocalStorage.getItem(
       STORAGE_KEYS.SELECTED_STT_PROVIDER
     );
-    console.log("[AppContext.loadData] Loading STT provider from localStorage:", savedSelectedStt);
+    let activeStt: SttSelection | null = null;
     if (savedSelectedStt) {
       try {
-        const saved = JSON.parse(savedSelectedStt) as {
-          variables?: Record<string, string>;
-        };
-        // Retain an existing API key while migrating every old provider
-        // selection into the sole supported Gemini workflow.
-        console.log("[AppContext.loadData] Parsed STT provider:", saved);
-        setSelectedSttProvider({
-          provider: GEMINI_TRANSCRIBE_PROVIDER_ID,
-          variables: {
-            api_key: saved.variables?.api_key || "",
-            model: saved.variables?.model ?? GEMINI_TRANSCRIBE_MODEL,
-          },
-        });
+        // Known voice providers are kept; older builds' selections migrate to
+        // Gemini Voice, retaining the API key.
+        activeStt = normalizeSttSelection(JSON.parse(savedSelectedStt));
+        console.log("[AppContext.loadData] Loaded STT provider:", activeStt.provider);
       } catch (error) {
         console.error("[AppContext.loadData] Failed to parse STT provider:", error);
-        setSelectedSttProvider({
-          provider: GEMINI_TRANSCRIBE_PROVIDER_ID,
-          variables: { api_key: "", model: GEMINI_TRANSCRIBE_MODEL },
-        });
+        activeStt = normalizeSttSelection(null);
       }
+      setSelectedSttProvider(activeStt);
     } else {
       console.log("[AppContext.loadData] No saved STT provider found in localStorage");
     }
+
+    // Each voice provider's own settings
+    const restoredVoice = restoreVoiceProviderSettings({
+      configsRaw: safeLocalStorage.getItem(STORAGE_KEYS.VOICE_PROVIDER_CONFIGS),
+      otherProviderRaw: safeLocalStorage.getItem(STORAGE_KEYS.OTHER_VOICE_PROVIDER),
+      active: activeStt ?? selectedSttProviderRef.current,
+    });
+    voiceProviderConfigsRef.current = restoredVoice.configs;
+    setVoiceProviderConfigs(restoredVoice.configs);
+    setOtherVoiceProviderIdState(restoredVoice.otherProviderId);
 
     // Load customizable state
     const customizableState = getCustomizableState();
@@ -387,6 +468,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       if (
         e.key === STORAGE_KEYS.CUSTOM_AI_PROVIDERS ||
         e.key === STORAGE_KEYS.SELECTED_AI_PROVIDER ||
+        e.key === STORAGE_KEYS.AI_PROVIDER_CONFIGS ||
+        e.key === STORAGE_KEYS.OTHER_AI_PROVIDER ||
+        e.key === STORAGE_KEYS.OTHER_VOICE_PROVIDER ||
+        e.key === STORAGE_KEYS.VOICE_PROVIDER_CONFIGS ||
         e.key === STORAGE_KEYS.CUSTOM_SPEECH_PROVIDERS ||
         e.key === STORAGE_KEYS.SELECTED_STT_PROVIDER ||
         e.key === STORAGE_KEYS.SYSTEM_PROMPT ||
@@ -413,7 +498,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   // Sync selected STT to localStorage
   useEffect(() => {
     if (selectedSttProvider.provider) {
-      console.log("[AppContext] Saving STT provider to localStorage:", selectedSttProvider);
+      console.log("[AppContext] Saving STT provider to localStorage:", selectedSttProvider.provider);
       safeLocalStorage.setItem(
         STORAGE_KEYS.SELECTED_STT_PROVIDER,
         JSON.stringify(selectedSttProvider)
@@ -427,9 +512,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     ...customAiProviders,
   ];
 
-  // Computed all STT providers
+  // Computed all STT providers: Gemini Voice, then the other voice providers
   const allSttProviders: TYPE_PROVIDER[] = [
     ...SPEECH_TO_TEXT_PROVIDERS,
+    ...VOICE_PROVIDER_RECORDS,
   ];
 
   const onSetSelectedAIProvider = ({
@@ -449,9 +535,68 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       provider,
       variables,
     }));
+    if (provider) {
+      saveAiProviderConfig(provider, variables);
+      if (provider !== GEMINI_AI_PROVIDER_ID) setOtherAiProvider(provider);
+    }
   };
 
-  // Setter for selected STT with validation
+  const saveAiProviderConfig = (provider: string, variables: ProviderVariables) => {
+    const next = { ...aiProviderConfigsRef.current, [provider]: variables };
+    aiProviderConfigsRef.current = next;
+    setAiProviderConfigs(next);
+    safeLocalStorage.setItem(STORAGE_KEYS.AI_PROVIDER_CONFIGS, JSON.stringify(next));
+  };
+
+  /** Saves a provider's settings; the active provider's are used right away. */
+  const updateAiProviderConfig = (provider: string, variables: ProviderVariables) => {
+    if (!allAiProviders.some((p) => p.id === provider)) {
+      console.warn(`Invalid AI provider ID: ${provider}`);
+      return;
+    }
+    saveAiProviderConfig(provider, variables);
+    setSelectedAIProvider((prev) =>
+      prev.provider === provider ? { provider, variables } : prev
+    );
+  };
+
+  /** Forgets a provider's saved settings (e.g. a deleted custom endpoint's key). */
+  const removeAiProviderConfig = (provider: string) => {
+    if (!(provider in aiProviderConfigsRef.current)) return;
+    const next = { ...aiProviderConfigsRef.current };
+    delete next[provider];
+    aiProviderConfigsRef.current = next;
+    setAiProviderConfigs(next);
+    safeLocalStorage.setItem(STORAGE_KEYS.AI_PROVIDER_CONFIGS, JSON.stringify(next));
+  };
+
+  /** Makes a provider answer questions, with its own saved settings. */
+  const activateAiProvider = (provider: string) => {
+    if (!allAiProviders.some((p) => p.id === provider)) {
+      console.warn(`Invalid AI provider ID: ${provider}`);
+      return;
+    }
+    setSelectedAIProvider({
+      provider,
+      variables: aiProviderConfigsRef.current[provider] ?? {},
+    });
+    if (provider !== GEMINI_AI_PROVIDER_ID) setOtherAiProvider(provider);
+  };
+
+  /** Chooses which provider "Other AI providers" shows (doesn't activate it). */
+  const setOtherAiProvider = (provider: string) => {
+    setOtherAiProviderIdState(provider);
+    safeLocalStorage.setItem(STORAGE_KEYS.OTHER_AI_PROVIDER, provider);
+  };
+
+  const saveVoiceProviderConfig = (provider: string, variables: ProviderVariables) => {
+    const next = { ...voiceProviderConfigsRef.current, [provider]: variables };
+    voiceProviderConfigsRef.current = next;
+    setVoiceProviderConfigs(next);
+    safeLocalStorage.setItem(STORAGE_KEYS.VOICE_PROVIDER_CONFIGS, JSON.stringify(next));
+  };
+
+  // Setter for selected STT with validation (also records that provider's settings)
   const onSetSelectedSttProvider = ({
     provider,
     variables,
@@ -459,18 +604,44 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     provider: string;
     variables: Record<string, string>;
   }) => {
-    if (provider !== GEMINI_TRANSCRIBE_PROVIDER_ID) {
+    if (!isVoiceProviderId(provider)) {
       console.warn(`Invalid STT provider ID: ${provider}`);
       return;
     }
 
-    setSelectedSttProvider({
-      provider: GEMINI_TRANSCRIBE_PROVIDER_ID,
-      variables: {
-        api_key: variables.api_key || "",
-        model: variables.model ?? GEMINI_TRANSCRIBE_MODEL,
-      },
-    });
+    const selection = normalizeSttSelection({ provider, variables });
+    setSelectedSttProvider(selection);
+    saveVoiceProviderConfig(provider, selection.variables);
+    if (provider !== GEMINI_TRANSCRIBE_PROVIDER_ID) setOtherVoiceProvider(provider);
+  };
+
+  /** Saves a voice provider's settings; the active one's are used right away. */
+  const updateVoiceProviderConfig = (provider: string, variables: ProviderVariables) => {
+    if (!isVoiceProviderId(provider)) {
+      console.warn(`Invalid STT provider ID: ${provider}`);
+      return;
+    }
+    const selection = normalizeSttSelection({ provider, variables });
+    saveVoiceProviderConfig(provider, selection.variables);
+    setSelectedSttProvider((prev) => (prev.provider === provider ? selection : prev));
+  };
+
+  /** Makes a provider transcribe voice input, with its own saved settings. */
+  const activateVoiceProvider = (provider: string) => {
+    if (!isVoiceProviderId(provider)) {
+      console.warn(`Invalid STT provider ID: ${provider}`);
+      return;
+    }
+    setSelectedSttProvider(
+      normalizeSttSelection({ provider, variables: voiceProviderConfigsRef.current[provider] ?? {} })
+    );
+    if (provider !== GEMINI_TRANSCRIBE_PROVIDER_ID) setOtherVoiceProvider(provider);
+  };
+
+  /** Chooses which provider "Other voice providers" shows (doesn't activate it). */
+  const setOtherVoiceProvider = (provider: string) => {
+    setOtherVoiceProviderIdState(provider);
+    safeLocalStorage.setItem(STORAGE_KEYS.OTHER_VOICE_PROVIDER, provider);
   };
 
   // Toggle handlers
@@ -528,6 +699,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     customAiProviders,
     selectedAIProvider,
     onSetSelectedAIProvider,
+    aiProviderConfigs,
+    updateAiProviderConfig,
+    removeAiProviderConfig,
+    activateAiProvider,
+    otherAiProviderId,
+    setOtherAiProvider,
+    voiceProviderConfigs,
+    updateVoiceProviderConfig,
+    activateVoiceProvider,
+    otherVoiceProviderId,
+    setOtherVoiceProvider,
     allSttProviders,
     customSttProviders,
     selectedSttProvider,

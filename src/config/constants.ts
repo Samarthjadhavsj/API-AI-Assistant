@@ -10,6 +10,14 @@ export const STORAGE_KEYS = {
   CUSTOM_SPEECH_PROVIDERS: "curl_custom_speech_providers",
   SELECTED_AI_PROVIDER: "curl_selected_ai_provider",
   SELECTED_STT_PROVIDER: "curl_selected_stt_provider",
+  // Each AI provider's own settings, kept when switching provider
+  AI_PROVIDER_CONFIGS: "ai_provider_configs",
+  // The provider shown under "Other AI providers"
+  OTHER_AI_PROVIDER: "ai_other_provider",
+  // Each voice provider's own settings, kept when switching provider
+  VOICE_PROVIDER_CONFIGS: "voice_provider_configs",
+  // The provider shown under "Other voice providers"
+  OTHER_VOICE_PROVIDER: "voice_other_provider",
   SYSTEM_AUDIO_CONTEXT: "system_audio_context",
   SYSTEM_AUDIO_QUICK_ACTIONS: "system_audio_quick_actions",
   CUSTOMIZABLE: "customizable",
