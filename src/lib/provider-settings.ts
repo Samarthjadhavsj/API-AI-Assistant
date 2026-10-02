@@ -42,8 +42,37 @@ const toVariables = (value: unknown): ProviderVariables | null => {
 };
 
 /**
+ * A provider's saved settings with a change applied. Fields the change leaves
+ * out keep their saved values, so a partial or empty change (a model switch,
+ * a provider switch, `{}`) never drops the API key. Only a value the change
+ * actually carries replaces a saved one — `""` included, which is how the user
+ * clears a field.
+ */
+export const mergeProviderVariables = (
+  saved: ProviderVariables | undefined,
+  change: unknown
+): ProviderVariables => ({ ...(saved ?? {}), ...(toVariables(change) ?? {}) });
+
+/**
+ * One provider's settings found in two places (the active selection and the
+ * per-provider map): `preferred` wins, except that an empty value never
+ * replaces a filled one, so neither copy can erase the other's API key.
+ */
+const combineSavedCopies = (
+  preferred: ProviderVariables,
+  other: ProviderVariables | undefined
+): ProviderVariables => {
+  const combined: ProviderVariables = { ...(other ?? {}) };
+  for (const [key, value] of Object.entries(preferred)) {
+    if (value.trim() || !combined[key]?.trim()) combined[key] = value;
+  }
+  return combined;
+};
+
+/**
  * Restores every provider's saved settings. The active selection wins for its
- * own provider, which also carries over installs that only saved that.
+ * own provider, which also carries over installs that only saved that — but an
+ * empty value in it never replaces a saved one (see combineSavedCopies).
  * `builtInId` is the built-in provider, which never counts as an "other" one.
  */
 export function restoreProviderSettings({
@@ -67,7 +96,10 @@ export function restoreProviderSettings({
   }
 
   if (active?.provider) {
-    configs[active.provider] = { ...(toVariables(active.variables) ?? {}) };
+    configs[active.provider] = combineSavedCopies(
+      toVariables(active.variables) ?? {},
+      configs[active.provider]
+    );
   }
 
   // A plain provider ID (anything else, e.g. an old JSON object, is ignored)
