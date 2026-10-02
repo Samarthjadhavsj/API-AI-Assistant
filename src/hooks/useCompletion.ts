@@ -30,6 +30,12 @@ import {
   validateAttachmentsForProvider,
 } from "@/lib/attachments";
 import type { AttachedFile, ChatMessage } from "@/types/completion";
+import {
+  buildConversationContext,
+  describeOmittedImages,
+  type ConversationImage,
+} from "@/lib/conversation-context";
+import { getAttachmentData, saveAttachmentData } from "@/lib/database/attachment-data.action";
 
 interface ChatConversation {
   id: string;
@@ -82,6 +88,28 @@ export const useCompletion = () => {
   const [keepEngaged, setKeepEngaged] = useState(false);
   /** Why picked or pasted files weren't attached, shown in the attachments panel. */
   const [attachmentNotices, setAttachmentNotices] = useState<string[]>([]);
+  /** Earlier images of this conversation that couldn't go with the last message. */
+  const [contextNotice, setContextNotice] = useState<string | null>(null);
+  // The open conversation's kept image data: read from the database once, then
+  // kept here, so earlier images aren't reloaded for every message. Only this
+  // conversation's images are ever loaded.
+  const imageMemoryRef = useRef<{
+    conversationId: string | null;
+    images: Map<string, ConversationImage>;
+  }>({ conversationId: null, images: new Map() });
+  const forgetImageMemory = () => {
+    imageMemoryRef.current = { conversationId: null, images: new Map() };
+  };
+  const loadImageMemory = async (
+    conversationId: string | null
+  ): Promise<ReadonlyMap<string, ConversationImage>> => {
+    // A new conversation has no earlier messages, so no earlier images.
+    if (!conversationId) return new Map();
+    if (imageMemoryRef.current.conversationId !== conversationId) {
+      imageMemoryRef.current = { conversationId, images: await getAttachmentData(conversationId) };
+    }
+    return imageMemoryRef.current.images;
+  };
   /** Files still being read; a send waits for them. */
   const [pendingAttachmentReads, setPendingAttachmentReads] = useState(0);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -268,16 +296,6 @@ export const useCompletion = () => {
       const signal = abortControllerRef.current.signal;
 
       try {
-        // Prepare message history for the AI. Text files attached earlier in
-        // the conversation are included again so follow-ups can refer to them.
-        const messageHistory = state.conversationHistory.map((msg) => ({
-          role: msg.role,
-          content:
-            msg.role === "user"
-              ? buildPromptWithTextFiles(msg.content, msg.attachedFiles)
-              : msg.content,
-        }));
-
         // Images go as image parts with their real format; text and code
         // files go inside the message.
         const images = attachments
@@ -314,6 +332,20 @@ export const useCompletion = () => {
           setState((prev) => ({ ...prev, error: attachmentError }));
           return;
         }
+
+        // The conversation so far, rebuilt for the provider (which keeps no
+        // state): earlier text files inline and earlier images with the message
+        // they were attached to, within what this provider accepts.
+        const { history: messageHistory, omitted } = buildConversationContext({
+          messages: state.conversationHistory,
+          images: await loadImageMemory(state.currentConversationId),
+          provider,
+          currentImageBytes: attachments
+            .filter(isImageAttachment)
+            .reduce((total, file) => total + file.size, 0),
+        });
+        if (currentRequestIdRef.current !== requestId) return; // superseded while loading
+        setContextNotice(describeOmittedImages(omitted));
 
         // A question being sent always shows the answer panel again
         setIsAnswerPanelHidden(false);
@@ -437,6 +469,7 @@ export const useCompletion = () => {
     }
     cancel();
     discardAttachments();
+    setContextNotice(null);
     setState((prev) => ({
       ...prev,
       input: "",
@@ -455,6 +488,9 @@ export const useCompletion = () => {
     const lastAssistantMessage = conversation.messages
       .filter(msg => msg.role === 'assistant')
       .pop();
+    // Its kept images are read when its next message is sent.
+    forgetImageMemory();
+    setContextNotice(null);
     
     setState((prev) => ({
       ...prev,
@@ -470,6 +506,9 @@ export const useCompletion = () => {
 
   const startNewConversation = useCallback(() => {
     discardAttachments();
+    // A new chat inherits nothing from the previous conversation.
+    forgetImageMemory();
+    setContextNotice(null);
     setState((prev) => ({
       ...prev,
       currentConversationId: null,
@@ -547,6 +586,23 @@ export const useCompletion = () => {
 
       try {
         await saveConversation(conversation);
+
+        // Keep this message's images with the conversation, so later messages
+        // can send them again (also after Continue chat or a restart).
+        await saveAttachmentData(conversationId, userMsg.id, attachedFiles);
+        const newImages = attachedFiles.filter(
+          (file) => isImageAttachment(file) && file.base64 !== ""
+        );
+        const memory = imageMemoryRef.current;
+        if (memory.conversationId === conversationId || !state.currentConversationId) {
+          // Loaded already, or a brand-new conversation: add them in place.
+          if (memory.conversationId !== conversationId) {
+            imageMemoryRef.current = { conversationId, images: new Map() };
+          }
+          for (const file of newImages) {
+            imageMemoryRef.current.images.set(file.id, { data: file.base64, mimeType: file.type });
+          }
+        }
 
         setState((prev) => ({
           ...prev,
@@ -707,12 +763,6 @@ export const useCompletion = () => {
           const signal = abortControllerRef.current.signal;
 
           try {
-            // Prepare message history for the AI
-            const messageHistory = state.conversationHistory.map((msg) => ({
-              role: msg.role,
-              content: msg.content,
-            }));
-
             let fullResponse = "";
 
             // Check if AI provider is configured
@@ -734,6 +784,16 @@ export const useCompletion = () => {
               }));
               return;
             }
+
+            // The conversation so far, rebuilt the same way as for typed messages
+            const { history: messageHistory, omitted } = buildConversationContext({
+              messages: state.conversationHistory,
+              images: await loadImageMemory(state.currentConversationId),
+              provider,
+              currentImageBytes: attachedFile.size,
+            });
+            if (currentRequestIdRef.current !== requestId) return; // superseded while loading
+            setContextNotice(describeOmittedImages(omitted));
 
             // A question being sent always shows the answer panel again
             setIsAnswerPanelHidden(false);
@@ -836,6 +896,7 @@ export const useCompletion = () => {
     },
     [
       state.conversationHistory,
+      state.currentConversationId,
       selectedAIProvider,
       allAiProviders,
       systemPrompt,
@@ -1191,6 +1252,7 @@ export const useCompletion = () => {
     onRemoveAllFiles,
     attachmentNotices,
     dismissAttachmentNotices,
+    contextNotice,
     isReadingAttachments: pendingAttachmentReads > 0,
     inputRef,
     captureScreenshot,
