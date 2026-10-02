@@ -101,6 +101,8 @@ export interface UseCompletionReturn {
   // UI helpers and computed values
   /** Whether any popover/modal should be open (computed from loading/response/error state) */
   isPopoverOpen: boolean;
+  /** Hides (or shows again) the answer panel without clearing anything */
+  setIsAnswerPanelHidden: Dispatch<SetStateAction<boolean>>;
   /** Ref for the scroll area container (for auto-scrolling) */
   scrollAreaRef: RefObject<HTMLDivElement | null>;
   /** Function to resize the application window based on UI state */

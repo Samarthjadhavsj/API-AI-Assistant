@@ -1,5 +1,4 @@
-import moment from "moment";
-import type { ChatConversation } from "@/types/completion";
+import type { ChatConversation, ChatMessage } from "@/types/completion";
 
 const MAX_TITLE_LENGTH = 120;
 
@@ -18,19 +17,6 @@ export const displayTitle = (title: string | undefined | null) => {
 
 export const pluralize = (count: number, noun: string) =>
   `${count} ${noun}${count === 1 ? "" : "s"}`;
-
-/**
- * Short, glanceable date for conversation lists: a time for today, then
- * "Yesterday", a weekday within the last week, and a plain date after that.
- */
-export const formatConversationDate = (timestamp: number, now: number = Date.now()) => {
-  const date = moment(timestamp);
-  const today = moment(now).startOf("day");
-  if (date.isSameOrAfter(today)) return date.format("h:mm A");
-  if (date.isSameOrAfter(today.clone().subtract(1, "day"))) return "Yesterday";
-  if (date.isSameOrAfter(today.clone().subtract(6, "days"))) return date.format("dddd");
-  return date.isSame(moment(now), "year") ? date.format("MMM D") : date.format("MMM D, YYYY");
-};
 
 /**
  * When a conversation last had activity: the newer of its `updatedAt` and its
@@ -58,3 +44,33 @@ export const sortConversationsByRecent = (
       lastActivityAt(b) - lastActivityAt(a) ||
       (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)
   );
+
+/** A question and the answer(s) that followed it, oldest → newest. */
+export interface Exchange {
+  key: string;
+  messages: ChatMessage[];
+}
+
+/**
+ * Message History presentation: groups a conversation into question → answer
+ * exchanges and lists the newest exchange first, each question still directly
+ * followed by its own answer. Works on a sorted copy (stable, so ties keep
+ * their stored order); the stored messages are never mutated or reordered.
+ */
+export const exchangesNewestFirst = (messages: readonly ChatMessage[]): Exchange[] => {
+  const chronological = messages
+    .filter((message) => message.role !== "system")
+    .slice()
+    .sort((a, b) => a.timestamp - b.timestamp);
+  const exchanges: Exchange[] = [];
+  chronological.forEach((message, index) => {
+    const current = exchanges[exchanges.length - 1];
+    // A question opens an exchange; answers join the question before them.
+    if (message.role === "user" || !current) {
+      exchanges.push({ key: message.id || `exchange_${index}`, messages: [message] });
+    } else {
+      current.messages.push(message);
+    }
+  });
+  return exchanges.reverse();
+};

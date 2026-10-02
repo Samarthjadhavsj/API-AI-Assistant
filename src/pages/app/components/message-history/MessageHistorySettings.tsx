@@ -8,7 +8,11 @@ import { DeleteConfirmationDialog } from "@/pages/chats/components/DeleteConfirm
 import { MESSAGE_HISTORY_ROUTE } from "./message-history.constants";
 import { displayTitle, pluralize, sortConversationsByRecent } from "./message-history.utils";
 
-/** Conversation list shown under Toggle Settings → Message History. */
+/**
+ * Conversation list shown under Toggle Settings → Message History: the one place
+ * that browses and manages every conversation. The main bar's Message History
+ * shows only the current conversation and links here.
+ */
 export const MessageHistorySettings = () => {
   const navigate = useNavigate();
   const {
@@ -27,7 +31,7 @@ export const MessageHistorySettings = () => {
 
   const pendingDelete = conversations.find((c) => c.id === deleteConfirm);
   const count = conversations.length;
-  // Same recent-first order as the main History popover.
+  // Most recent activity first.
   const recentConversations = useMemo(
     () => sortConversationsByRecent(conversations),
     [conversations]

@@ -1,4 +1,4 @@
-import { Loader2, XIcon } from "lucide-react";
+import { XIcon } from "lucide-react";
 import {
   Popover,
   PopoverAnchor,
@@ -12,6 +12,7 @@ import { TransparentPopoverContent } from "@/components/ui/popover";
 import { UseCompletionReturn } from "@/types";
 import type { ChatMessage } from "@/types/completion";
 import { MessageHistory } from "./MessageHistory";
+import { ThreadGenerating, ThreadMessage } from "./ThreadMessage";
 import { VoiceInputBar, VoiceUiState } from "./VoiceInputBar";
 import {
   useState,
@@ -27,6 +28,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { voiceErrorMessage } from "@/lib/voice/errors";
 import { voiceInputBlocker } from "@/lib/provider-status";
 import { GEMINI_TRANSCRIBE_PROVIDER_ID } from "@/config/stt.constants";
+import { exchangesNewestFirst } from "@/pages/app/components/message-history/message-history.utils";
 
 export const Input = ({
   isPopoverOpen,
@@ -42,6 +44,7 @@ export const Input = ({
   startNewConversation,
   messageHistoryOpen,
   setMessageHistoryOpen,
+  setIsAnswerPanelHidden,
   error,
   response,
   cancel,
@@ -277,10 +280,11 @@ export const Input = ({
     };
   }, []);
 
-  // Conversation mode reads top → bottom, oldest → newest. Sort a copy: sorting
-  // the state array in place would reorder the history sent to the AI.
-  const chronologicalHistory = useMemo(
-    () => [...conversationHistory].sort((a, b) => a.timestamp - b.timestamp),
+  // Conversation mode shows the newest exchange on top, each answer under its
+  // question (same as Message History). Display only: the helper works on a
+  // copy, so the history sent to the AI keeps its chronological order.
+  const newestFirstHistory = useMemo(
+    () => exchangesNewestFirst(conversationHistory).flatMap((exchange) => exchange.messages),
     [conversationHistory]
   );
 
@@ -308,37 +312,10 @@ export const Input = ({
   };
 
   const renderThreadMessage = (message: ChatMessage) => (
-    <div
-      key={message.id}
-      className={`p-3 rounded-lg text-sm ${message.role === "user" ? "border-l-4 border-primary" : ""}`}
-      data-role={message.role}
-    >
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-xs font-medium text-muted-foreground uppercase">
-          {message.role === "user" ? "You" : "AI"}
-        </span>
-        <span className="text-xs text-muted-foreground">
-          {new Date(message.timestamp).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-        </span>
-      </div>
-      <Markdown>{message.content}</Markdown>
-      {message.attachedFiles && message.attachedFiles.length > 0 && (
-        <p className="mt-2 text-xs text-muted-foreground break-words" data-testid="message-attachments">
-          Attached: {message.attachedFiles.map((file) => file.name).join(", ")}
-        </p>
-      )}
-    </div>
+    <ThreadMessage key={message.id} message={message} />
   );
 
-  const renderGenerating = () => (
-    <div className="flex items-center gap-2 my-4 text-muted-foreground animate-pulse select-none">
-      <Loader2 className="h-4 w-4 animate-spin" />
-      <span className="text-sm">Generating response...</span>
-    </div>
-  );
+  const renderGenerating = () => <ThreadGenerating />;
 
   const renderError = () => (
     <div className="mb-4 p-3 border border-destructive/20 rounded text-sm text-destructive">
@@ -380,15 +357,28 @@ export const Input = ({
               isProviderConfigured={isProviderConfigured}
               errorMessage={voiceError}
             />
-            {!isLoading && voiceUiState === "idle" && (
-              <MessageHistory
-                conversationHistory={conversationHistory}
-                currentConversationId={currentConversationId}
-                onStartNewConversation={startNewConversation}
-                messageHistoryOpen={messageHistoryOpen}
-                setMessageHistoryOpen={setMessageHistoryOpen}
-              />
-            )}
+            {/* Hidden while answering or recording, except when already open:
+                then it stays to show the new question and its streaming answer.
+                Hidden rather than unmounted, so it keeps its reading position. */}
+            <MessageHistory
+              hidden={!messageHistoryOpen && (isLoading || voiceUiState !== "idle")}
+              conversationHistory={conversationHistory}
+              currentConversationId={currentConversationId}
+              pendingMessage={pendingMessage}
+              response={response}
+              isLoading={isLoading}
+              onStartNewConversation={() => {
+                // Stop an answer still streaming, or it would be saved back
+                // into the conversation that was just cleared.
+                if (isLoading) cancel();
+                startNewConversation();
+              }}
+              messageHistoryOpen={messageHistoryOpen}
+              setMessageHistoryOpen={setMessageHistoryOpen}
+              // The icon closes everything below the bar (nothing is cleared);
+              // closing the drawer any other way leaves the answer panel shown.
+              onClosed={(how) => setIsAnswerPanelHidden?.(how === "icon")}
+            />
             {trailingControls}
           </div>
         </PopoverAnchor>
@@ -461,10 +451,9 @@ export const Input = ({
           <ScrollArea ref={scrollAreaRef} className="h-[calc(100vh-7rem)]">
             <div className="p-4">
               {keepEngaged ? (
-                // Conversation: history oldest → newest, then the question just
-                // sent and its streaming answer at the bottom.
+                // Conversation: the question just sent on top with its answer
+                // streaming under it, then earlier exchanges, newest first.
                 <div className="space-y-3" data-testid="conversation-thread">
-                  {chronologicalHistory.map(renderThreadMessage)}
                   {pendingMessage && renderThreadMessage(pendingMessage)}
                   {pendingMessage &&
                     response &&
@@ -474,11 +463,12 @@ export const Input = ({
                       content: response,
                       timestamp: pendingMessage.timestamp,
                     })}
-                  {!pendingMessage &&
-                    chronologicalHistory.length === 0 &&
-                    response && <Markdown>{response}</Markdown>}
                   {isLoading && !response && renderGenerating()}
                   {error && renderError()}
+                  {newestFirstHistory.map(renderThreadMessage)}
+                  {!pendingMessage &&
+                    newestFirstHistory.length === 0 &&
+                    response && <Markdown>{response}</Markdown>}
                 </div>
               ) : (
                 <>

@@ -30,9 +30,16 @@ type Props = {
   contentKey?: unknown;
   conversationKey?: unknown;
   follow?: boolean;
+  anchor?: "bottom" | "top";
 };
 
-const Harness = ({ isLoading = false, contentKey = 0, conversationKey = "c1", follow = true }: Props) => {
+const Harness = ({
+  isLoading = false,
+  contentKey = 0,
+  conversationKey = "c1",
+  follow = true,
+  anchor,
+}: Props) => {
   const rootRef = useRef<HTMLDivElement>(null);
   useChatAutoScroll({
     scrollAreaRef: rootRef,
@@ -41,6 +48,7 @@ const Harness = ({ isLoading = false, contentKey = 0, conversationKey = "c1", fo
     contentKey,
     conversationKey,
     isFollowEnabled: () => follow,
+    anchor,
   });
   return (
     <div ref={rootRef}>
@@ -154,5 +162,66 @@ describe("useChatAutoScroll", () => {
     rerender(<Harness conversationKey="c2" />);
 
     await waitFor(() => expect(lastScroll()).toEqual({ top: 1000, behavior: "auto" }));
+  });
+
+  describe("anchored at the top (newest-first lists)", () => {
+    const top = (props: Props = {}) => <Harness anchor="top" {...props} />;
+
+    beforeEach(() => {
+      viewport.scrollTop = 0; // newest exchange in view
+    });
+
+    it("loading a conversation starts at the top", async () => {
+      render(top());
+
+      await waitFor(() => expect(lastScroll()).toEqual({ top: 0, behavior: "auto" }));
+    });
+
+    it("sending scrolls back to the top, even from older messages further down", async () => {
+      const { rerender } = render(top());
+      await nextFrame();
+      userScrollsTo(500);
+      viewport.scrollTo.mockClear();
+
+      rerender(top({ isLoading: true }));
+
+      await waitFor(() => expect(lastScroll()).toEqual({ top: 0, behavior: "smooth" }));
+    });
+
+    it("keeps following streamed text while the reader is near the top", async () => {
+      const { rerender } = render(top({ isLoading: true }));
+      await nextFrame();
+      userScrollsTo(NEAR_BOTTOM_THRESHOLD - 10);
+      viewport.scrollTo.mockClear();
+
+      rerender(top({ isLoading: true, contentKey: 1 }));
+
+      await waitFor(() => expect(lastScroll()).toEqual({ top: 0, behavior: "auto" }));
+    });
+
+    it("leaves a reader of older messages alone while the answer streams", async () => {
+      const { rerender } = render(top({ isLoading: true }));
+      await nextFrame();
+      userScrollsTo(500);
+      viewport.scrollTo.mockClear();
+
+      rerender(top({ isLoading: true, contentKey: 1 }));
+      rerender(top({ isLoading: false, contentKey: 2 }));
+      await nextFrame();
+
+      expect(viewport.scrollTo).not.toHaveBeenCalled();
+      expect(viewport.scrollTop).toBe(500);
+    });
+
+    it("never scrolls towards the bottom, where the oldest messages are", async () => {
+      const { rerender } = render(top());
+      await nextFrame();
+      rerender(top({ isLoading: true, contentKey: 1 }));
+      rerender(top({ isLoading: true, contentKey: 2, conversationKey: "c2" }));
+      await nextFrame();
+
+      expect(viewport.scrollTo.mock.calls.map(([options]) => options.top)).not.toContain(1000);
+      expect(viewport.scrollTo.mock.calls.every(([options]) => options.top === 0)).toBe(true);
+    });
   });
 });

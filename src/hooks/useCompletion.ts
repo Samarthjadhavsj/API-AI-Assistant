@@ -72,6 +72,11 @@ export const useCompletion = () => {
     pendingMessage: null,
   });
   const [messageHistoryOpen, setMessageHistoryOpen] = useState(false);
+  /**
+   * The answer panel tucked away by the Message History icon. Only hides it:
+   * the answer, conversation and draft are kept, and new activity shows it again.
+   */
+  const [isAnswerPanelHidden, setIsAnswerPanelHidden] = useState(false);
   const [isFilesPopoverOpen, setIsFilesPopoverOpen] = useState(false);
   const [isScreenshotLoading, setIsScreenshotLoading] = useState(false);
   const [keepEngaged, setKeepEngaged] = useState(false);
@@ -310,6 +315,8 @@ export const useCompletion = () => {
           return;
         }
 
+        // A question being sent always shows the answer panel again
+        setIsAnswerPanelHidden(false);
         // Clear previous response and set loading state
         setState((prev) => ({
           ...prev,
@@ -728,6 +735,8 @@ export const useCompletion = () => {
               return;
             }
 
+            // A question being sent always shows the answer panel again
+            setIsAnswerPanelHidden(false);
             // Clear previous response and set loading state
             setState((prev) => ({
               ...prev,
@@ -886,11 +895,22 @@ export const useCompletion = () => {
     }
   }, [pendingAttachmentReads, submit]);
 
+  // One conversation surface at a time: while the Message History drawer is
+  // open, the answer / Conversation Mode panel is not shown (nor mounted), so
+  // the drawer is the only thread on screen. It comes back when the drawer
+  // closes, unless the Message History icon tucked it away.
   const isPopoverOpen =
-    state.isLoading ||
-    state.response !== "" ||
-    state.error !== null ||
-    keepEngaged;
+    (state.isLoading ||
+      state.response !== "" ||
+      state.error !== null ||
+      keepEngaged) &&
+    !isAnswerPanelHidden &&
+    !messageHistoryOpen;
+
+  // Switching conversations shows the panel again (so does sending; see submit).
+  useEffect(() => {
+    setIsAnswerPanelHidden(false);
+  }, [state.currentConversationId]);
 
   useEffect(() => {
     resizeWindow(
@@ -904,8 +924,9 @@ export const useCompletion = () => {
   ]);
 
   // Keep the newest exchange in view in both answer and conversation modes:
-  // sending scrolls to the bottom, streaming follows only while the reader is
-  // at the bottom, and reading older messages is never interrupted.
+  // sending scrolls to it, streaming follows only while the reader is there,
+  // and reading older messages is never interrupted. Conversation mode lists
+  // the newest exchange first, so it is anchored at the top.
   useChatAutoScroll({
     scrollAreaRef,
     isOpen: isPopoverOpen,
@@ -913,6 +934,7 @@ export const useCompletion = () => {
     contentKey: `${keepEngaged}:${state.response.length}:${state.conversationHistory.length}:${state.pendingMessage?.id ?? ""}`,
     conversationKey: state.currentConversationId,
     isFollowEnabled: () => getResponseSettings().autoScroll,
+    anchor: keepEngaged ? "top" : "bottom",
   });
 
   // Keyboard arrow key support for scrolling
@@ -1161,6 +1183,7 @@ export const useCompletion = () => {
     handleKeyPress,
     handlePaste,
     isPopoverOpen,
+    setIsAnswerPanelHidden,
     scrollAreaRef,
     resizeWindow,
     isFilesPopoverOpen,

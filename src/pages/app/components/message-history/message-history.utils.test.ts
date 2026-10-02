@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { ChatConversation, ChatMessage } from "@/types/completion";
-import { lastActivityAt, sortConversationsByRecent } from "./message-history.utils";
+import {
+  exchangesNewestFirst,
+  lastActivityAt,
+  sortConversationsByRecent,
+} from "./message-history.utils";
 
 const msg = (id: string, role: "user" | "assistant", timestamp: number): ChatMessage => ({
   id,
@@ -85,5 +89,64 @@ describe("sortConversationsByRecent", () => {
       );
     }
     expect(input.map((c) => c.messages.map((m) => m.id))).toEqual(messagesBefore);
+  });
+});
+
+describe("exchangesNewestFirst", () => {
+  const ids = (exchanges: ReturnType<typeof exchangesNewestFirst>) =>
+    exchanges.map((exchange) => exchange.messages.map((m) => m.id));
+
+  it("puts the newest question first, its answer directly under it, older exchanges after", () => {
+    const stored = [
+      msg("q1", "user", 100),
+      msg("a1", "assistant", 101),
+      msg("q2", "user", 200),
+      msg("a2", "assistant", 201),
+      msg("q3", "user", 300),
+      msg("a3", "assistant", 301),
+    ];
+
+    expect(ids(exchangesNewestFirst(stored))).toEqual([
+      ["q3", "a3"],
+      ["q2", "a2"],
+      ["q1", "a1"],
+    ]);
+  });
+
+  it("pairs by time even when stored out of order", () => {
+    const stored = [msg("a2", "assistant", 201), msg("q1", "user", 100), msg("q2", "user", 200), msg("a1", "assistant", 101)];
+
+    expect(ids(exchangesNewestFirst(stored))).toEqual([
+      ["q2", "a2"],
+      ["q1", "a1"],
+    ]);
+  });
+
+  it("keeps the stored order for equal timestamps", () => {
+    const stored = [msg("q1", "user", 100), msg("a1", "assistant", 100)];
+
+    expect(ids(exchangesNewestFirst(stored))).toEqual([["q1", "a1"]]);
+  });
+
+  it("keeps an unanswered question as its own exchange and skips system messages", () => {
+    const stored: ChatMessage[] = [
+      { id: "s", role: "system", content: "", timestamp: 1 },
+      msg("q1", "user", 100),
+      msg("q2", "user", 200),
+      msg("a2", "assistant", 201),
+    ];
+
+    expect(ids(exchangesNewestFirst(stored))).toEqual([["q2", "a2"], ["q1"]]);
+  });
+
+  it("never mutates or reorders the stored array", () => {
+    const stored = Object.freeze([
+      Object.freeze(msg("a1", "assistant", 101)),
+      Object.freeze(msg("q1", "user", 100)),
+    ]) as readonly ChatMessage[];
+
+    exchangesNewestFirst(stored);
+
+    expect(stored.map((m) => m.id)).toEqual(["a1", "q1"]);
   });
 });
