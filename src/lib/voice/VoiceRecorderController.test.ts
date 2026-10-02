@@ -213,6 +213,35 @@ describe("VoiceRecorderController", () => {
     expect(controller.getSnapshot().error?.message).toBe("No speech detected. Please try again.");
   });
 
+  it("an engine failure cancels the engine (closing its connection) and frees the microphone", async () => {
+    const { stream, stop: stopTrack } = fakeStream();
+    const engine = {
+      stream,
+      start: vi.fn(),
+      stop: vi.fn(async () => fakeArtifact()),
+      cancel: vi.fn(async () => undefined),
+      releaseTracks: vi.fn(() => stopTrack()),
+    };
+    let reportFailure!: (error: unknown) => void;
+    const controller = new VoiceRecorderController({ request: async () => stream }, (options) => {
+      reportFailure = options.onFailure;
+      return engine;
+    });
+
+    await controller.start({ adapter: fakeAdapter(), ownerId: "overlay" });
+    reportFailure(new Error("worklet failed to load"));
+
+    expect(controller.getSnapshot().state).toBe("error");
+    expect(controller.getSnapshot().error?.code).toBe("recorder_failed");
+    expect(engine.cancel).toHaveBeenCalledOnce();
+    expect(engine.releaseTracks).toHaveBeenCalledOnce();
+    expect(stopTrack).toHaveBeenCalled();
+    // Already torn down: a later stop or cancel doesn't touch the engine again.
+    await expect(controller.stop("overlay")).resolves.toBeNull();
+    controller.cancel("overlay");
+    expect(engine.cancel).toHaveBeenCalledOnce();
+  });
+
   it("ignores stop and cancel from a surface that does not own the session", async () => {
     const { stream } = fakeStream();
     const engine = {

@@ -443,16 +443,23 @@ export class GeminiLiveSttAdapter implements SttAdapter {
       this.resolveTranscription = resolve;
       this.rejectTranscription = reject;
     });
+    // It's awaited below only once connected; a failure before then is
+    // reported by the connection instead, so don't let it surface unhandled.
+    transcriptionPromise.catch(() => undefined);
 
     // Handle abort signal
     this.abortHandler = () => {
       // Clear the handlers to prevent onclose from overriding the abort error
       const reject = this.rejectTranscription;
+      // Aborted while still connecting: settle the connection too, so
+      // transcribe() returns instead of waiting on a closed socket.
+      const rejectConnection = this.rejectConnection;
       this.resolveTranscription = null;
       this.rejectTranscription = null;
 
       this.close();
       reject?.(new DOMException("Transcription cancelled.", "AbortError"));
+      rejectConnection?.(new DOMException("Transcription cancelled.", "AbortError"));
     };
 
     signal.addEventListener("abort", this.abortHandler);
