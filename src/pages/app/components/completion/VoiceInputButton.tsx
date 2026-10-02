@@ -3,23 +3,7 @@ import { Files } from "./Files";
 import { Input } from "./Input";
 import { Screenshot } from "./Screenshot";
 
-/**
- * Submits a voice transcript by appending it to the existing prompt.
- * @param existingPrompt - The current prompt text
- * @param transcript - The voice transcript to append
- * @param submit - The completion submit function
- * @param focusInput - Function to focus the input field
- */
-export const submitVoiceTranscript = async (
-  existingPrompt: string,
-  transcript: string,
-  submit: (prompt: string) => Promise<void>,
-  focusInput: () => void
-) => {
-  focusInput();
-  const combinedPrompt = (existingPrompt + " " + transcript.trim()).trim();
-  await submit(combinedPrompt);
-};
+export { submitVoiceTranscript } from "./voice-submit";
 
 /**
  * Determines whether to ignore a voice shortcut based on recording ownership.

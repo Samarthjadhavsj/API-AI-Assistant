@@ -29,6 +29,12 @@ import { voiceErrorMessage } from "@/lib/voice/errors";
 import { voiceInputBlocker } from "@/lib/provider-status";
 import { GEMINI_TRANSCRIBE_PROVIDER_ID } from "@/config/stt.constants";
 import { exchangesNewestFirst } from "@/pages/app/components/message-history/message-history.utils";
+import {
+  responseLanguageName,
+  TranslationError,
+  translateText,
+} from "@/lib/functions/translate.function";
+import { submitVoiceTranscript } from "./voice-submit";
 
 export const Input = ({
   isPopoverOpen,
@@ -36,6 +42,7 @@ export const Input = ({
   reset,
   input,
   setInput,
+  submit,
   handleKeyPress,
   handlePaste,
   currentConversationId,
@@ -67,6 +74,12 @@ export const Input = ({
   const [voiceLiveTranscript, setVoiceLiveTranscript] = useState("");
   const [voiceStream, setVoiceStream] = useState<MediaStream | null>(null);
   const [voiceError, setVoiceError] = useState<string>("");
+  // Translate & Send: which button's spinner shows, what processing says, and
+  // the transcript kept on screen when its translation failed.
+  const [voiceBusyAction, setVoiceBusyAction] = useState<"confirm" | "translate">("confirm");
+  const [voiceProcessingLabel, setVoiceProcessingLabel] = useState<string | undefined>();
+  const [retryTranscript, setRetryTranscript] = useState("");
+  const [retryMessage, setRetryMessage] = useState("");
   const { selectedAudioDevices, selectedSttProvider } = useApp();
   // Gemini Voice needs its key; another voice provider must be supported and set up.
   const usesGeminiVoice =
@@ -75,6 +88,13 @@ export const Input = ({
   const isProviderConfigured = usesGeminiVoice
     ? Boolean(selectedSttProvider.variables.api_key?.trim())
     : !otherVoiceBlocker;
+  // Translate & Send uses the Gemini Voice API key (no separate key or setting).
+  const geminiVoiceKey = usesGeminiVoice ? selectedSttProvider.variables.api_key?.trim() ?? "" : "";
+  const translateUnavailableReason = !usesGeminiVoice
+    ? "Translate and send uses Gemini Voice. Select it in Settings → Voice Transcription."
+    : !geminiVoiceKey
+      ? "Add a Gemini API key in Settings → Voice Transcription to translate."
+      : undefined;
 
   const voice = useVoiceInput({
     maxDurationMs: 3 * 60 * 1000,
@@ -93,7 +113,7 @@ export const Input = ({
   voiceRef.current = voice;
   const voiceUiStateRef = useRef(voiceUiState);
   voiceUiStateRef.current = voiceUiState;
-  const voiceActionRef = useRef<"idle" | "canceling" | "confirming">("idle");
+  const voiceActionRef = useRef<"idle" | "canceling" | "confirming" | "translating">("idle");
   const startPromiseRef = useRef<Promise<boolean> | null>(null);
   const errorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -177,6 +197,8 @@ export const Input = ({
       setVoiceLiveTranscript("");
       setVoiceStream(null);
       setVoiceError("");
+      setRetryTranscript("");
+      setRetryMessage("");
 
       try {
         await invoke("set_recording_state", { recording: false });
@@ -190,6 +212,16 @@ export const Input = ({
 
   const handleVoiceConfirm = async () => {
     if (voiceActionRef.current !== "idle" || voiceUiState === "processing") return;
+    if (voiceUiState === "retry") {
+      // Translation failed earlier: insert the untranslated transcript instead.
+      setInput(retryTranscript);
+      setRetryTranscript("");
+      setRetryMessage("");
+      setVoiceTranscript("");
+      setVoiceUiState("idle");
+      setTimeout(() => inputRef.current?.focus(), 100);
+      return;
+    }
     voiceActionRef.current = "confirming";
     clearErrorTimer();
 
@@ -222,6 +254,93 @@ export const Input = ({
       console.error("[VoiceInput] Error stopping voice recording:", error);
       triggerVoiceError(voiceErrorMessage(error) || "Couldn't process voice");
     } finally {
+      try {
+        await invoke("set_recording_state", { recording: false });
+      } catch (clearError) {
+        console.error("[VoiceInput] Failed to clear recording state:", clearError);
+      } finally {
+        voiceActionRef.current = "idle";
+      }
+    }
+  };
+
+  /**
+   * Translates a final transcript and sends it through the normal send (the
+   * draft and attachments go with it, as one message). A failed translation
+   * sends nothing and keeps the transcript on screen to retry.
+   */
+  const translateAndSend = async (transcript: string) => {
+    setVoiceTranscript(transcript);
+    setVoiceBusyAction("translate");
+    setVoiceProcessingLabel("Translating…");
+    setVoiceUiState("processing");
+    try {
+      const translated = await translateText({
+        text: transcript,
+        targetLanguage: responseLanguageName(),
+        apiKey: geminiVoiceKey,
+      });
+      setRetryTranscript("");
+      setRetryMessage("");
+      setVoiceTranscript("");
+      setVoiceUiState("idle");
+      // The normal send takes over (and shows the answer as usual)
+      void submitVoiceTranscript(input, translated, submit, () => inputRef.current?.focus());
+    } catch (error) {
+      setRetryTranscript(transcript);
+      setRetryMessage(
+        error instanceof TranslationError ? error.message : "Translation failed. Try again."
+      );
+      setVoiceUiState("retry");
+    } finally {
+      setVoiceBusyAction("confirm");
+      setVoiceProcessingLabel(undefined);
+    }
+  };
+
+  const handleVoiceTranslateSend = async () => {
+    if (voiceActionRef.current !== "idle" || voiceUiState === "processing") return;
+    if (translateUnavailableReason) return;
+    voiceActionRef.current = "translating";
+    clearErrorTimer();
+
+    // Retry: the transcript is already final; only translate again.
+    if (voiceUiState === "retry") {
+      try {
+        await translateAndSend(retryTranscript);
+      } finally {
+        voiceActionRef.current = "idle";
+      }
+      return;
+    }
+
+    // Stop listening and take the final transcript, exactly as Confirm does.
+    setVoiceBusyAction("translate");
+    setVoiceUiState("processing");
+    try {
+      const pendingStart = startPromiseRef.current;
+      if (voiceRef.current.state === "requestingPermission" && pendingStart) {
+        const started = await pendingStart;
+        if (!started) {
+          triggerVoiceError("Couldn't process voice");
+          return;
+        }
+      }
+
+      const result = await voiceRef.current.stop();
+      const transcript = result?.text.trim();
+      setVoiceLiveTranscript("");
+      setVoiceStream(null);
+      if (!transcript) {
+        triggerVoiceError("No speech detected");
+        return;
+      }
+      await translateAndSend(transcript);
+    } catch (error) {
+      console.error("[VoiceInput] Error stopping voice recording:", error instanceof Error ? error.message : error);
+      triggerVoiceError(voiceErrorMessage(error) || "Couldn't process voice");
+    } finally {
+      setVoiceBusyAction("confirm");
       try {
         await invoke("set_recording_state", { recording: false });
       } catch (clearError) {
@@ -347,6 +466,11 @@ export const Input = ({
               onMicClick={handleMicClick}
               onCancel={handleVoiceCancel}
               onConfirm={handleVoiceConfirm}
+              onTranslateSend={handleVoiceTranslateSend}
+              translateUnavailableReason={translateUnavailableReason}
+              busyAction={voiceBusyAction}
+              processingLabel={voiceProcessingLabel}
+              retryMessage={retryMessage}
               isProcessing={voiceUiState === "processing"}
               className="flex-1 mt-0.5"
               inputValue={input}
