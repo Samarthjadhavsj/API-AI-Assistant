@@ -3,6 +3,13 @@
  * Converts audio to 16-bit PCM at 16kHz using AudioWorklet and streams chunks.
  */
 
+// Vite compiles the TypeScript worklet into its own JavaScript file (served as
+// JS in dev, emitted as a .js asset in production). Importing the .ts file with
+// `new URL(...)` instead ships it uncompiled, which addModule() rejects.
+import pcmWorkletUrl from "./pcm-processor.worklet.ts?worker&url";
+
+export const PCM_WORKLET_URL: string = pcmWorkletUrl;
+
 export interface LivePcmStreamerOptions {
   stream: MediaStream;
   onChunk: (pcmData: ArrayBuffer) => void;
@@ -25,6 +32,8 @@ export class LivePcmStreamer implements ILivePcmStreamer {
   private sourceNode: MediaStreamAudioSourceNode | null = null;
   private workletNode: AudioWorkletNode | null = null;
   private isActive = false;
+  /** Set by stop()/cancel(); a start still loading the worklet then stands down. */
+  private disposed = false;
   private speechDetected = false;
 
   // Threshold for speech detection (RMS amplitude for 16-bit PCM)
@@ -47,8 +56,13 @@ export class LivePcmStreamer implements ILivePcmStreamer {
       this.audioContext = new AudioContext({ sampleRate: 16000 });
 
       // Load the AudioWorklet processor
-      const workletUrl = new URL('./pcm-processor.worklet.ts', import.meta.url);
-      await this.audioContext.audioWorklet.addModule(workletUrl);
+      await this.audioContext.audioWorklet.addModule(PCM_WORKLET_URL);
+
+      // Stopped or cancelled while the worklet loaded: build nothing more.
+      if (this.disposed) {
+        this.cleanup();
+        return;
+      }
 
       // Create source from MediaStream
       this.sourceNode = this.audioContext.createMediaStreamSource(this.stream);
@@ -80,6 +94,8 @@ export class LivePcmStreamer implements ILivePcmStreamer {
       console.log("[LivePcmStreamer] Started streaming PCM audio");
     } catch (error) {
       this.cleanup();
+      // A failure caused by stopping mid-start isn't an error to report.
+      if (this.disposed) return;
       const err = error instanceof Error ? error : new Error(String(error));
       this.onError(err);
       throw err;
@@ -87,7 +103,12 @@ export class LivePcmStreamer implements ILivePcmStreamer {
   }
 
   async stop(): Promise<void> {
-    if (!this.isActive) return;
+    this.disposed = true;
+    if (!this.isActive) {
+      // Still starting: release what exists so far.
+      this.cleanup();
+      return;
+    }
 
     console.log("[LivePcmStreamer] Stopping PCM streaming");
     this.isActive = false;
@@ -96,6 +117,7 @@ export class LivePcmStreamer implements ILivePcmStreamer {
 
   cancel(): void {
     console.log("[LivePcmStreamer] Canceling PCM streaming");
+    this.disposed = true;
     this.isActive = false;
     this.cleanup();
   }

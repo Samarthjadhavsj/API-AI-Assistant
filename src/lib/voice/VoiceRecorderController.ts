@@ -80,6 +80,20 @@ export class VoiceRecorderController {
     }
   }
 
+  /**
+   * On failure: cancel the engine as well as freeing the microphone, so a live
+   * engine closes its Gemini connection and audio pipeline instead of leaving
+   * them open after the session has ended.
+   */
+  private discardEngine() {
+    const engine = this.engine;
+    if (!engine) return;
+    void engine.cancel().catch((error) => {
+      console.error("[VoiceController] Error cancelling failed engine:", error);
+    });
+    this.releaseEngine();
+  }
+
   private reset() {
     console.log("[VoiceController] Resetting controller state");
     this.clearTimers();
@@ -124,7 +138,7 @@ export class VoiceRecorderController {
     this.abortController = null;
     this.activeAdapter = null;
     this.activeOnResult = undefined;
-    this.releaseEngine();
+    this.discardEngine();
     this.publish({ ...IDLE_SNAPSHOT, state: "error", error, activeOwnerId });
   }
 

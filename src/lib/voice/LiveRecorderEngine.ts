@@ -26,6 +26,7 @@ export class LiveRecorderEngine implements IRecorderEngine {
   private transcriptionAbort: AbortController | null = null;
   private stopped = false;
   private cancelled = false;
+  private failed = false;
 
   constructor({ stream, deviceId, onFailure, onPartial, adapter }: LiveRecorderEngineOptions) {
     this.stream = stream;
@@ -65,6 +66,9 @@ export class LiveRecorderEngine implements IRecorderEngine {
         this.onPartial?.(text);
       },
     });
+    // stop() awaits the result; a session torn down early never does, so its
+    // rejection (e.g. the abort below) must not surface as unhandled.
+    this.transcriptionPromise.catch(() => undefined);
 
     // Create streamer with chunk callback
     this.streamer = new LivePcmStreamer({
@@ -77,19 +81,41 @@ export class LiveRecorderEngine implements IRecorderEngine {
       },
       onError: (error: Error) => {
         console.error("[LiveRecorderEngine] Streamer error:", error);
-        this.onFailure(error);
+        this.fail(error);
       },
     });
 
     // Start streaming PCM
     void this.streamer.start().catch((error) => {
       console.error("[LiveRecorderEngine] Failed to start streamer:", error);
-      this.onFailure(error);
+      this.fail(error);
     });
   }
 
+  /** Stops the audio pipeline and closes the live connection; safe to repeat. */
+  private teardown(): void {
+    if (this.streamer) {
+      this.streamer.cancel();
+      this.streamer = null;
+    }
+    // Aborting makes the adapter close its WebSocket.
+    if (this.transcriptionAbort) {
+      this.transcriptionAbort.abort();
+      this.transcriptionAbort = null;
+    }
+    this.transcriptionPromise = null;
+  }
+
+  /** Recorder failure (e.g. the worklet didn't load): release everything, report once. */
+  private fail(error: unknown): void {
+    if (this.failed || this.stopped || this.cancelled) return;
+    this.failed = true;
+    this.teardown();
+    this.onFailure(error);
+  }
+
   async stop(): Promise<AudioArtifact | null> {
-    if (this.stopped || this.cancelled) {
+    if (this.stopped || this.cancelled || this.failed) {
       return null;
     }
 
@@ -153,21 +179,7 @@ export class LiveRecorderEngine implements IRecorderEngine {
 
     console.log("[LiveRecorderEngine] Cancelling live streaming");
     this.cancelled = true;
-
-    // Cancel the PCM streamer
-    if (this.streamer) {
-      this.streamer.cancel();
-      this.streamer = null;
-    }
-
-    // Abort transcription
-    if (this.transcriptionAbort) {
-      this.transcriptionAbort.abort();
-      this.transcriptionAbort = null;
-    }
-
-    // Discard transcription promise
-    this.transcriptionPromise = null;
+    this.teardown();
   }
 
   releaseTracks(): void {

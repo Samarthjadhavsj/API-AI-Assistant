@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { LivePcmStreamer } from "./LivePcmStreamer";
+import { LivePcmStreamer, PCM_WORKLET_URL } from "./LivePcmStreamer";
 
 // Mock AudioContext and related APIs
 class MockAudioWorkletNode {
@@ -89,6 +89,20 @@ describe("LivePcmStreamer", () => {
 
       const audioContext = (streamer as any).audioContext;
       expect(audioContext.audioWorklet.addModule).toHaveBeenCalledOnce();
+
+      await streamer.stop();
+    });
+
+    it("loads the compiled worklet URL, never an inlined .ts data: URL", async () => {
+      const streamer = new LivePcmStreamer({ stream: mockStream, onChunk, onError });
+
+      await streamer.start();
+
+      const addModule = (streamer as any).audioContext.audioWorklet.addModule;
+      expect(addModule).toHaveBeenCalledWith(PCM_WORKLET_URL);
+      // Vite's worker URL (dev: `…worklet.ts?worker_file`, build: `/assets/…worklet-[hash].js`)
+      expect(PCM_WORKLET_URL).toMatch(/pcm-processor\.worklet(\.ts\?worker_file|-[\w-]+\.js$)/);
+      expect(PCM_WORKLET_URL).not.toMatch(/^data:/);
 
       await streamer.stop();
     });
@@ -336,6 +350,73 @@ describe("LivePcmStreamer", () => {
       // Restore
       (global as any).AudioContext = OriginalAudioContext;
     });
+
+    it("a worklet that fails to load closes its AudioContext and builds no nodes", async () => {
+      const created: MockAudioContext[] = [];
+      const OriginalAudioContext = (global as any).AudioContext;
+      (global as any).AudioContext = class extends MockAudioContext {
+        audioWorklet = {
+          addModule: vi
+            .fn()
+            .mockRejectedValue(new DOMException("Unable to load a worklet's module.", "AbortError")),
+        };
+        constructor() {
+          super();
+          created.push(this);
+        }
+      };
+
+      try {
+        const streamer = new LivePcmStreamer({ stream: mockStream, onChunk, onError });
+        await expect(streamer.start()).rejects.toThrow("Unable to load a worklet's module.");
+
+        expect(created).toHaveLength(1);
+        expect(created[0].close).toHaveBeenCalledOnce();
+        expect(created[0].createMediaStreamSource).not.toHaveBeenCalled();
+        expect(onError).toHaveBeenCalledOnce();
+        expect(streamer.hasSpeechDetected()).toBe(false);
+      } finally {
+        (global as any).AudioContext = OriginalAudioContext;
+      }
+    });
+
+    it.each(["stop", "cancel"] as const)(
+      "%s() while the worklet is still loading releases everything and builds nothing",
+      async (method) => {
+        let finishLoading!: () => void;
+        const created: MockAudioContext[] = [];
+        const OriginalAudioContext = (global as any).AudioContext;
+        (global as any).AudioContext = class extends MockAudioContext {
+          audioWorklet = {
+            addModule: vi.fn(() => new Promise<void>((resolve) => (finishLoading = resolve))),
+          };
+          constructor() {
+            super();
+            created.push(this);
+          }
+        };
+
+        try {
+          const streamer = new LivePcmStreamer({ stream: mockStream, onChunk, onError });
+          const starting = streamer.start();
+          await Promise.resolve();
+
+          if (method === "stop") await streamer.stop();
+          else streamer.cancel();
+          finishLoading();
+          await starting;
+
+          expect(created[0].close).toHaveBeenCalledOnce();
+          expect(created[0].createMediaStreamSource).not.toHaveBeenCalled();
+          expect((streamer as any).workletNode).toBeNull();
+          expect((streamer as any).audioContext).toBeNull();
+          // Standing down after stop/cancel isn't a failure.
+          expect(onError).not.toHaveBeenCalled();
+        } finally {
+          (global as any).AudioContext = OriginalAudioContext;
+        }
+      }
+    );
 
     it("throws error when starting twice", async () => {
       const streamer = new LivePcmStreamer({
