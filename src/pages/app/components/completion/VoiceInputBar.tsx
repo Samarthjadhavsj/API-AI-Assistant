@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertCircle, Check, Loader2, Mic, MicOff, X } from "lucide-react";
+import { AlertCircle, Check, Languages, Loader2, Mic, MicOff, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   EXPANDED_WINDOW_HEIGHT,
@@ -7,8 +7,12 @@ import {
   setNativeWindowHeight,
 } from "@/hooks/useWindow";
 
-export type VoiceUiState = "idle" | "listening" | "processing" | "error";
-export type VoiceInputState = "idle" | "listening" | "active" | "processing" | "error";
+/**
+ * "retry": a finished transcript whose translation failed, kept on screen so it
+ * can be translated again, inserted, or discarded.
+ */
+export type VoiceUiState = "idle" | "listening" | "processing" | "error" | "retry";
+export type VoiceInputState = "idle" | "listening" | "active" | "processing" | "error" | "retry";
 
 export interface VoiceInputBarProps {
   state?: VoiceInputState;
@@ -28,6 +32,16 @@ export interface VoiceInputBarProps {
   isProcessing?: boolean;
   isProviderConfigured?: boolean;
   errorMessage?: string;
+  /** Adds Translate & Send beside ✕ and ✓ (listening and retry only). */
+  onTranslateSend?: () => void;
+  /** Why Translate & Send can't run (shown as its tooltip); enabled when unset. */
+  translateUnavailableReason?: string;
+  /** Which action the processing spinner belongs to. */
+  busyAction?: "confirm" | "translate";
+  /** What processing is doing, e.g. "Translating…" (default "Transcribing…"). */
+  processingLabel?: string;
+  /** Why the last translation failed (retry state). */
+  retryMessage?: string;
 }
 
 const VOICE_WAVE = {
@@ -124,6 +138,11 @@ export function VoiceInputBar({
   isProcessing = false,
   isProviderConfigured = true,
   errorMessage = "",
+  onTranslateSend,
+  translateUnavailableReason,
+  busyAction = "confirm",
+  processingLabel = "Transcribing…",
+  retryMessage = "",
 }: VoiceInputBarProps) {
   // Explicit UI state resolution: prefers uiState, falls back to processing/state mapping
   const activeUiState: VoiceUiState =
@@ -139,8 +158,9 @@ export function VoiceInputBar({
       : "idle");
   const isListening = activeUiState === "listening";
   const isTranscribing = activeUiState === "processing";
-  /** Listening or transcribing: the bar shows the spoken transcript. */
-  const isVoiceSession = isListening || isTranscribing;
+  const isRetry = activeUiState === "retry";
+  /** Listening, transcribing/translating, or retrying: the bar shows the spoken transcript. */
+  const isVoiceSession = isListening || isTranscribing || isRetry;
 
   const [wave, setWave] = useState<number[]>(quietWave);
   /** Latest wave height from the analyser; sampled into the wave on a timer. */
@@ -221,12 +241,14 @@ export function VoiceInputBar({
   onCancelRef.current = onCancel;
 
   useEffect(() => {
-    if (activeUiState !== "listening") return;
+    if (activeUiState !== "listening" && activeUiState !== "retry") return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Enter") {
         // Let IME composition commit its text; never treat that Enter as finish.
         if (event.isComposing || event.keyCode === 229) return;
+        // A focused ✕ / ✓ / Translate & Send button does its own action.
+        if (event.target instanceof Element && event.target.closest('[data-testid="voice-controls"] button')) return;
         event.preventDefault();
         event.stopPropagation();
         // Shift+Enter is swallowed: no newline (read-only) and no send.
@@ -380,7 +402,9 @@ export function VoiceInputBar({
   const statusText = isListening
     ? "Listening"
     : isTranscribing
-    ? "Transcribing"
+    ? processingLabel.replace(/…$/, "")
+    : isRetry
+    ? `${retryMessage || "Translation failed."} Translate and send again, insert, or cancel.`
     : notice?.text ?? "";
 
   const renderTextarea = () => (
@@ -388,7 +412,7 @@ export function VoiceInputBar({
       <textarea
         ref={setTextareaRef}
         placeholder={
-          isListening ? "Listening…" : isTranscribing ? "Transcribing…" : "Write a message…"
+          isListening ? "Listening…" : isTranscribing ? processingLabel : "Write a message…"
         }
         value={displayValue}
         onChange={(e) => onInputChange?.(e.target.value)}
@@ -460,12 +484,20 @@ export function VoiceInputBar({
               />
             ))}
           </span>
+        ) : isRetry ? (
+          <span
+            key="retry"
+            className="whitespace-nowrap text-[11px] text-destructive duration-150 motion-safe:animate-in motion-safe:fade-in-0"
+            data-testid="voice-retry-status"
+          >
+            Not translated
+          </span>
         ) : (
           <span
             key="transcribing"
             className="whitespace-nowrap text-[11px] italic text-muted-foreground duration-150 motion-safe:animate-in motion-safe:fade-in-0"
           >
-            Transcribing…
+            {processingLabel}
           </span>
         )}
       </div>
@@ -493,12 +525,12 @@ export function VoiceInputBar({
           onConfirm();
         }}
         disabled={isTranscribing}
-        aria-busy={isTranscribing || undefined}
+        aria-busy={(isTranscribing && busyAction === "confirm") || undefined}
         className={sessionButton}
         title="Finish dictation"
         aria-label="Finish dictation"
       >
-        {isTranscribing ? (
+        {isTranscribing && busyAction === "confirm" ? (
           <Loader2
             key="spinner"
             className="size-4 pointer-events-none motion-safe:animate-spin"
@@ -511,6 +543,33 @@ export function VoiceInputBar({
           />
         )}
       </button>
+
+      {onTranslateSend && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onTranslateSend();
+          }}
+          disabled={isTranscribing || !!translateUnavailableReason}
+          aria-busy={(isTranscribing && busyAction === "translate") || undefined}
+          className={cn(sessionButton, "disabled:opacity-40")}
+          title={translateUnavailableReason ?? "Translate and send"}
+          aria-label="Translate and send"
+          data-testid="voice-translate-send"
+        >
+          {isTranscribing && busyAction === "translate" ? (
+            <Loader2
+              key="spinner"
+              className="size-4 pointer-events-none motion-safe:animate-spin"
+              data-testid="voice-translate-spinner"
+            />
+          ) : (
+            <Languages key="translate" className="size-4 pointer-events-none" />
+          )}
+        </button>
+      )}
     </div>
   );
 

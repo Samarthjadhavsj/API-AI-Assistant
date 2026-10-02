@@ -99,6 +99,13 @@ export const GEMINI_VOICE_MODELS: readonly GeminiVoiceModelOption[] = [
   },
 ];
 
+/**
+ * Translates a finished voice transcript for Translate & Send, with the Gemini
+ * Voice API key. The Live voice models don't translate text that has already
+ * been transcribed, so this is one plain text request.
+ */
+export const GEMINI_TRANSLATION_MODEL = "gemini-3.5-flash-lite";
+
 const formatTokens = (tpm: number) =>
   tpm >= 1_000_000 ? `${tpm / 1_000_000}M` : `${Math.round(tpm / 1000)}K`;
 
