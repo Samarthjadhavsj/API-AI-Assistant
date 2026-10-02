@@ -74,29 +74,29 @@ const threadText = () =>
   );
 
 describe("Input conversation thread", () => {
-  it("shows history oldest → newest, then the new question immediately while generating", () => {
+  it("shows the new question on top immediately while generating, then older exchanges", () => {
     renderInput({ isLoading: true, pendingMessage: newQuestion });
 
     expect(threadText()).toEqual([
-      "YouOld question",
-      "AIOld answer",
       "YouNew question",
       "Generating response...",
+      "YouOld question",
+      "AIOld answer",
     ]);
   });
 
-  it("streams the new answer directly under the new question, at the bottom", () => {
+  it("streams the new answer directly under the new question, at the top", () => {
     renderInput({ isLoading: true, pendingMessage: newQuestion, response: "New answer so far" });
 
     expect(threadText()).toEqual([
-      "YouOld question",
-      "AIOld answer",
       "YouNew question",
       "AINew answer so far",
+      "YouOld question",
+      "AIOld answer",
     ]);
   });
 
-  it("after saving, each message appears exactly once in chronological order", () => {
+  it("after saving, each message appears exactly once, newest exchange first", () => {
     const newAnswer = msg("a2", "assistant", "New answer", 2_001);
     const savedQuestion = msg("q2", "user", "New question", 2_000);
     renderInput({
@@ -106,10 +106,10 @@ describe("Input conversation thread", () => {
     });
 
     expect(threadText()).toEqual([
-      "YouOld question",
-      "AIOld answer",
       "YouNew question",
       "AINew answer",
+      "YouOld question",
+      "AIOld answer",
     ]);
   });
 
@@ -138,10 +138,47 @@ describe("Input conversation thread", () => {
       isLoading: true,
     });
 
-    expect(screen.getAllByTestId("message-attachments").map((el) => el.textContent)).toEqual([
-      "Attached: chart.png, data.csv",
-      "Attached: screen.png",
+    // Newest first, and each list stays with its own question
+    const lists = screen.getAllByTestId("message-attachments");
+    expect(lists.map((el) => el.textContent)).toEqual(["Attached: screen.png", "Attached: chart.png, data.csv"]);
+    expect(lists[0].closest("[data-role]")).toHaveTextContent("New question");
+    expect(lists[1].closest("[data-role]")).toHaveTextContent("Old question");
+  });
+
+  it("regression: renders the reported 4-exchange conversation newest first", () => {
+    const at = [1790949451684, 1790951152718, 1790951963307, 1790959600725];
+    const texts = [
+      ["hi", "Hi there! How can I help you today?"],
+      ["hi hey can you give me leetcode 100 th ans", "Hello! It looks like you're referring to LeetCode problem #100."],
+      ["hi can you tell what time is now", "Hello! I don't have access to real-time clocks."],
+      ["hi", "Hi there! How can I help you today?"],
+    ];
+    // As stored and as sent to the AI: oldest → newest
+    const stored = Object.freeze(
+      texts.flatMap(([question, answer], i) => [
+        Object.freeze(msg(`q${i + 1}`, "user", question, at[i])),
+        Object.freeze(msg(`a${i + 1}`, "assistant", answer, at[i] + 1)),
+      ])
+    );
+    renderInput({ conversationHistory: stored, pendingMessage: null, response: texts[3][1] });
+
+    // Final rendered DOM order, top to bottom
+    const items = [...screen.getByTestId("conversation-thread").querySelectorAll("[data-role]")];
+    // Each item: its label row, then the message text as its last child
+    expect(items.map((el) => [el.getAttribute("data-role"), el.lastElementChild?.textContent])).toEqual([
+      ["user", "hi"],
+      ["assistant", "Hi there! How can I help you today?"],
+      ["user", "hi can you tell what time is now"],
+      ["assistant", "Hello! I don't have access to real-time clocks."],
+      ["user", "hi hey can you give me leetcode 100 th ans"],
+      ["assistant", "Hello! It looks like you're referring to LeetCode problem #100."],
+      ["user", "hi"],
+      ["assistant", "Hi there! How can I help you today?"],
     ]);
+    expect(items[0]).toHaveTextContent(/10:16/);
+    expect(items[6]).toHaveTextContent(/07:27/);
+    // The stored / sent order is untouched
+    expect(stored.map((m) => m.id)).toEqual(["q1", "a1", "q2", "a2", "q3", "a3", "q4", "a4"]);
   });
 
   it("normal (non-conversation) mode still shows just the latest answer", () => {

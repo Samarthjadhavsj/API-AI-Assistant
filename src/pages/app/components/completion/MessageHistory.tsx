@@ -1,209 +1,214 @@
-import { ChevronLeft, MessageSquareText, Trash2, XIcon } from "lucide-react";
+import { MessageSquareText, Plus, XIcon } from "lucide-react";
 import { Popover, PopoverTrigger, Button, ScrollArea } from "@/components";
 import { TransparentPopoverContent } from "@/components/ui/popover";
 import { ChatMessage } from "@/types/completion";
+import { useCallback, useMemo, useRef, type KeyboardEvent } from "react";
+import { useChatAutoScroll } from "@/hooks/useChatAutoScroll";
+import { getResponseSettings } from "@/lib/storage/response-settings.storage";
 import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ComponentProps,
-  type KeyboardEvent,
-} from "react";
-import { useHistory } from "@/hooks/useHistory";
-import { DeleteConfirmationDialog } from "@/pages/chats/components/DeleteConfirmation";
-import { ConversationRow } from "@/pages/app/components/message-history/ConversationRow";
-import { ConversationTranscript } from "@/pages/app/components/message-history/ConversationTranscript";
-import {
-  HistoryEmpty,
-  HistoryLoading,
-} from "@/pages/app/components/message-history/HistoryStates";
-import {
-  displayTitle,
-  pluralize,
-  sortConversationsByRecent,
-} from "@/pages/app/components/message-history/message-history.utils";
+  ConversationTranscript,
+  type LiveExchange,
+} from "@/pages/app/components/message-history/ConversationTranscript";
+import { HistoryEmpty } from "@/pages/app/components/message-history/HistoryStates";
+import { displayTitle } from "@/pages/app/components/message-history/message-history.utils";
 
 interface MessageHistoryProps {
   conversationHistory: ChatMessage[];
   currentConversationId: string | null;
+  /** The question just sent, until its exchange is saved to history. */
+  pendingMessage?: ChatMessage | null;
+  /** The answer to `pendingMessage` as it streams in. */
+  response?: string;
+  isLoading?: boolean;
   onStartNewConversation: () => void;
   messageHistoryOpen: boolean;
   setMessageHistoryOpen: (open: boolean) => void;
+  /**
+   * Hides the icon (while answering or recording) without unmounting, so the
+   * drawer keeps the reading position it remembers.
+   */
+  hidden?: boolean;
+  /** Called after the drawer closes: by its icon, or any other way. */
+  onClosed?: (how: "icon" | "other") => void;
 }
 
-const iconButton =
-  "size-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground";
+/** Where the reader left a conversation's thread, and what the thread held then. */
+interface SavedScroll {
+  threadKey: string;
+  scrollTop: number;
+}
 
-/**
- * The main search bar: the voice/text bar inside the response popover's
- * anchor. The anchor also wraps the history icon and the mic, so match the bar
- * itself rather than the whole anchor.
- */
+const NO_MESSAGES: ChatMessage[] = [];
+const VIEWPORT = "[data-radix-scroll-area-viewport]";
+
+/** The main bar's voice/text input (inside the response panel's anchor). */
 const MAIN_SEARCH_BAR = '[data-slot="popover-anchor"] [data-voice-state]';
 
+const headerButton =
+  "h-7 shrink-0 gap-1 rounded-full px-2.5 text-xs font-medium [&_svg]:size-3.5";
+
+/** Keys that scroll the transcript while focus is anywhere in the drawer. */
+const SCROLL_KEYS: Record<string, (viewport: HTMLElement) => number> = {
+  ArrowDown: () => 100,
+  ArrowUp: () => -100,
+  PageDown: (viewport) => viewport.clientHeight * 0.9,
+  PageUp: (viewport) => -viewport.clientHeight * 0.9,
+};
+
+// Follows streamed text only while the reader is at the newest exchange (the
+// same Auto-scroll setting as the answer panel).
+const isFollowEnabled = () => getResponseSettings().autoScroll;
+
 /**
- * Overlay conversation browser: Recent Conversations → a conversation's Q&A.
- * Back and Close are explicit state transitions (no browser history), and none
- * of this touches the main input's response state unless the user chooses
- * "Continue chat". Full management (Delete All, routes) stays in
- * Toggle Settings → Message History; both read the same `useHistory` data.
+ * Main bar → Message History: one compact drawer showing only the active
+ * conversation in Conversation Mode style, read straight from the completion
+ * state (no second copy, no database reads), newest exchange first. A question
+ * being answered appears at the top with its answer streaming beneath it.
+ * Opening or closing it never touches the draft, answer, attachments, or voice
+ * state, and reopening returns to where the reader left off. Browsing and
+ * managing every conversation lives in Toggle Settings → Message History.
  */
 export const MessageHistory = ({
   conversationHistory,
   currentConversationId,
+  pendingMessage = null,
+  response = "",
+  isLoading = false,
   onStartNewConversation,
   messageHistoryOpen,
   setMessageHistoryOpen,
+  hidden = false,
+  onClosed,
 }: MessageHistoryProps) => {
-  // Stays mounted with the overlay, so load when opened rather than on mount.
-  const {
-    conversations,
-    isLoading,
-    refreshConversations,
-    deleteConfirm,
-    handleDeleteConfirm,
-    confirmDelete,
-    cancelDelete,
-    isDeleting,
-  } = useHistory({ autoLoad: false });
-  const [openConversationId, setOpenConversationId] = useState<string | null>(null);
-  const listRef = useRef<HTMLUListElement>(null);
-  const backButtonRef = useRef<HTMLButtonElement>(null);
-  // Row to refocus when returning from a conversation to the list
-  const returnFocusIdRef = useRef<string | null>(null);
-  // Radix reports both the pointerdown and the resulting focus as outside
-  // interactions; continue a previewed conversation at most once per open.
-  const continuedFromSearchBarRef = useRef(false);
+  const scrollAreaRef = useRef<HTMLDivElement | null>(null);
+  const messagesRef = useRef<HTMLElement>(null);
+  // Reading position per conversation, kept in memory only while the main bar
+  // is mounted. The drawer's content unmounts on close, so this is what lets
+  // a reopen return to the same spot.
+  const savedScrollRef = useRef(new Map<string, SavedScroll>());
 
-  // Every open starts at Recent Conversations with fresh data.
-  useEffect(() => {
-    if (messageHistoryOpen) {
-      setOpenConversationId(null);
-      returnFocusIdRef.current = null;
-      continuedFromSearchBarRef.current = false;
-      refreshConversations();
-    }
-  }, [messageHistoryOpen, refreshConversations]);
-
-  const recentConversations = useMemo(
-    () => sortConversationsByRecent(conversations),
-    [conversations]
+  // Ordering is the transcript's job (newest exchange first, on a copy).
+  const messages = useMemo(
+    () => conversationHistory.filter((message) => message.role !== "system"),
+    [conversationHistory]
   );
-  const openConversation = openConversationId
-    ? conversations.find((c) => c.id === openConversationId) ?? null
-    : null;
+  const savedMessages = currentConversationId !== null ? messages : NO_MESSAGES;
+  const live = useMemo<LiveExchange | null>(
+    () =>
+      pendingMessage
+        ? { question: pendingMessage, answer: response, isGenerating: isLoading }
+        : null,
+    [pendingMessage, response, isLoading]
+  );
+  const hasConversation = savedMessages.length > 0 || live !== null;
+  // Conversations are titled after their first question (see useCompletion).
+  const title = displayTitle(
+    savedMessages
+      .filter((message) => message.role === "user")
+      .reduce<ChatMessage | undefined>((first, m) => (!first || m.timestamp < first.timestamp ? m : first), undefined)
+      ?.content ?? pendingMessage?.content
+  );
+  const conversationSlot = currentConversationId ?? "new";
+  // What the thread holds. A saved position only applies to the same thread:
+  // after a new question or answer (or in another conversation) the drawer
+  // opens at the newest exchange instead.
+  const threadKey = `${conversationSlot}:${savedMessages.length}:${pendingMessage?.id ?? ""}`;
+  const threadRef = useRef({ conversationSlot, threadKey });
+  threadRef.current = { conversationSlot, threadKey };
 
-  // Keep keyboard focus where the user expects it after switching views.
-  useEffect(() => {
-    if (!messageHistoryOpen) return;
-    if (openConversation) {
-      backButtonRef.current?.focus();
-    } else if (returnFocusIdRef.current) {
-      listRef.current
-        ?.querySelector<HTMLButtonElement>(
-          `[data-conversation-id="${returnFocusIdRef.current}"] [data-conversation-row]`
-        )
-        ?.focus();
-      returnFocusIdRef.current = null;
-    }
-  }, [messageHistoryOpen, openConversation]);
+  // Same rules as the answer panel, anchored at the top where the newest
+  // exchange is: each send shows it; streamed text is followed only while the
+  // reader is there, so reading older messages is never interrupted; switching
+  // conversations starts at its newest exchange. Opening doesn't scroll: a
+  // fresh thread already starts at the top, and a reopen restores its spot.
+  useChatAutoScroll({
+    scrollAreaRef,
+    isOpen: messageHistoryOpen,
+    isLoading,
+    contentKey: `${savedMessages.length}:${pendingMessage?.id ?? ""}:${response.length}`,
+    conversationKey: currentConversationId,
+    isFollowEnabled,
+    anchor: "top",
+  });
 
-  const showList = useCallback(() => {
-    returnFocusIdRef.current = openConversationId;
-    setOpenConversationId(null);
-  }, [openConversationId]);
+  // Runs when the drawer's scroll area mounts, before it is painted: return to
+  // the saved spot if the thread is unchanged (no visible jump), otherwise stay
+  // at the top, where the newest exchange is.
+  const attachScrollArea = useCallback((root: HTMLDivElement | null) => {
+    scrollAreaRef.current = root;
+    const viewport = root?.querySelector<HTMLElement>(VIEWPORT);
+    if (!viewport) return;
+    const { conversationSlot: slot, threadKey: key } = threadRef.current;
+    const saved = savedScrollRef.current.get(slot);
+    if (saved?.threadKey === key) viewport.scrollTop = saved.scrollTop;
+  }, []);
 
-  const close = useCallback(() => setMessageHistoryOpen(false), [setMessageHistoryOpen]);
+  // Set by the icon's click just before Radix toggles the drawer closed.
+  const closingFromIconRef = useRef(false);
+
+  // Every way of closing (Close, Escape, the icon, clicking away) goes through
+  // here while the content is still mounted, so the position can be read.
+  const handleOpenChange = useCallback(
+    (open: boolean) => {
+      const how = closingFromIconRef.current ? "icon" : "other";
+      closingFromIconRef.current = false;
+      if (!open) {
+        const viewport = scrollAreaRef.current?.querySelector<HTMLElement>(VIEWPORT);
+        if (viewport) {
+          const { conversationSlot: slot, threadKey: key } = threadRef.current;
+          savedScrollRef.current.set(slot, { threadKey: key, scrollTop: viewport.scrollTop });
+        }
+      }
+      setMessageHistoryOpen(open);
+      if (!open) onClosed?.(how);
+    },
+    [setMessageHistoryOpen, onClosed]
+  );
+
+  const close = useCallback(() => handleOpenChange(false), [handleOpenChange]);
 
   const handleNewChat = useCallback(() => {
     onStartNewConversation();
     close();
+    // A new chat starts fresh: forget every remembered position.
+    savedScrollRef.current.clear();
   }, [onStartNewConversation, close]);
 
-  // Resume in the main input via the existing conversationSelected workflow.
-  const handleContinue = useCallback(
-    (conversationId: string) => {
-      close();
-      // Let the popover close before the main input loads the conversation
-      setTimeout(() => {
-        window.dispatchEvent(
-          new CustomEvent("conversationSelected", { detail: { id: conversationId } })
-        );
-      }, 50);
-    },
-    [close]
-  );
-
-  // Clicking or focusing the main search bar while previewing a conversation
-  // means "continue this one": hand it to the main input through the same
-  // Continue chat path. Anything else keeps Radix's normal dismiss, and the
-  // click/focus itself still reaches the search bar (no preventDefault).
-  const handleInteractOutside: ComponentProps<
-    typeof TransparentPopoverContent
-  >["onInteractOutside"] = (event) => {
-    const target = event.target;
-    if (!openConversationId || continuedFromSearchBarRef.current) return;
-    if (!(target instanceof Element)) return;
-    if (!target.closest(MAIN_SEARCH_BAR) || target.closest("button")) return;
-
-    continuedFromSearchBarRef.current = true;
-    // Already the active conversation: just close, keeping its state (and any draft).
-    if (openConversationId === currentConversationId) return;
-    handleContinue(openConversationId);
+  // Scroll the transcript from the keyboard. Handled here (and kept from
+  // bubbling) so the response panel's own arrow-key scrolling underneath
+  // doesn't take over while this drawer has focus.
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const scrollBy = SCROLL_KEYS[event.key];
+    if (!scrollBy) return;
+    event.stopPropagation();
+    const viewport = scrollAreaRef.current?.querySelector<HTMLElement>(VIEWPORT);
+    if (!viewport) return;
+    event.preventDefault();
+    viewport.scrollBy({ top: scrollBy(viewport), behavior: "smooth" });
   };
-
-  const handleConfirmDelete = useCallback(async () => {
-    const deletingOpenConversation = deleteConfirm === openConversationId;
-    await confirmDelete();
-    if (deletingOpenConversation) setOpenConversationId(null);
-  }, [confirmDelete, deleteConfirm, openConversationId]);
-
-  // Up/Down move between rows; Enter/Space activate the focused row button.
-  const handleListKeyDown = (event: KeyboardEvent<HTMLUListElement>) => {
-    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-    const rows = Array.from(
-      listRef.current?.querySelectorAll<HTMLButtonElement>("[data-conversation-row]") ?? []
-    );
-    const index = rows.indexOf(document.activeElement as HTMLButtonElement);
-    const next =
-      event.key === "ArrowDown"
-        ? rows[Math.min(index + 1, rows.length - 1)]
-        : rows[Math.max(index - 1, 0)];
-    if (next) {
-      event.preventDefault();
-      next.focus();
-    }
-  };
-
-  const isActiveConversation =
-    currentConversationId !== null && conversationHistory.length > 0;
-  const conversationCount = isActiveConversation
-    ? conversationHistory.length
-    : conversations.length;
-  const pendingDelete = conversations.find((c) => c.id === deleteConfirm);
-  const showLoading = isLoading && conversations.length === 0;
 
   return (
-    <div className="relative mt-1 shrink-0">
-      <Popover open={messageHistoryOpen} onOpenChange={setMessageHistoryOpen}>
+    <div className="relative mt-1 shrink-0" hidden={hidden}>
+      <Popover open={messageHistoryOpen} onOpenChange={handleOpenChange}>
         <PopoverTrigger asChild>
           <Button
             size="icon"
             className="size-8 cursor-pointer"
-            aria-label="View Conversations"
-            title="View Conversations"
+            aria-label="Message History"
+            onClick={() => {
+              closingFromIconRef.current = messageHistoryOpen;
+            }}
+            title="Message History (current conversation)"
             data-tauri-drag-region={false}
           >
             <MessageSquareText className="h-4 w-4" />
           </Button>
         </PopoverTrigger>
 
-        {/* Conversation count badge */}
-        {conversationCount > 0 && (
+        {/* Message count of the current conversation */}
+        {savedMessages.length > 0 && (
           <div className="absolute -top-2 -right-2 bg-primary-foreground text-primary rounded-full h-5 w-5 flex border border-primary items-center justify-center text-xs font-medium pointer-events-none">
-            {conversationCount}
+            {savedMessages.length}
           </div>
         )}
 
@@ -211,143 +216,92 @@ export const MessageHistory = ({
           align="end"
           side="bottom"
           className="select-none w-screen p-0 mt-3 overflow-hidden rounded-2xl border border-input/40"
-          aria-label={openConversation ? "Conversation" : "Recent Conversations"}
-          onInteractOutside={handleInteractOutside}
+          aria-label="Current conversation"
+          data-message-history="current"
+          onKeyDown={handleKeyDown}
+          // Start on the transcript, not a header action, so Enter can't
+          // start a new chat by accident and arrow keys scroll right away.
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            messagesRef.current?.focus();
+          }}
+          // Clicking, focusing or typing in the main search bar keeps this one
+          // drawer open (the input is also refocused after each answer). Its
+          // buttons (e.g. the mic), clicks elsewhere, and Escape still close it.
+          onPointerDownOutside={(event) => {
+            const target = event.target;
+            if (
+              target instanceof Element &&
+              target.closest(MAIN_SEARCH_BAR) &&
+              !target.closest("button")
+            ) {
+              event.preventDefault();
+            }
+          }}
+          onFocusOutside={(event) => {
+            const target = event.target;
+            if (target instanceof Element && target.closest(MAIN_SEARCH_BAR)) {
+              event.preventDefault();
+            }
+          }}
         >
-          {openConversation ? (
-            <header className="flex items-center gap-1 border-b border-border/40 px-2 py-2">
+          {/* One compact header; everything else is the conversation. */}
+          <header className="flex h-9 items-center gap-1 border-b border-border/40 pl-3 pr-1.5">
+            <p className="min-w-0 flex-1 truncate text-xs font-medium text-muted-foreground" title={title}>
+              {hasConversation ? title : "New conversation"}
+            </p>
+            {hasConversation && (
               <Button
-                aria-label="Back to Recent Conversations"
-                className={iconButton}
-                onClick={showList}
-                ref={backButtonRef}
-                size="icon"
-                title="Back"
-                variant="ghost"
-              >
-                <ChevronLeft className="size-5" />
-              </Button>
-              <div className="min-w-0 flex-1 px-1">
-                <h2 className="truncate text-[15px] font-semibold tracking-tight">
-                  {displayTitle(openConversation.title)}
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  {pluralize(openConversation.messages.length, "message")}
-                </p>
-              </div>
-              <Button
-                className="h-8 shrink-0 rounded-full px-3 text-xs"
-                onClick={() => handleContinue(openConversation.id)}
-                size="sm"
-                variant="secondary"
-              >
-                Continue chat
-              </Button>
-              <Button
-                aria-label={`Delete conversation ${displayTitle(openConversation.title)}`}
-                className={`${iconButton} hover:text-destructive`}
-                disabled={isDeleting}
-                onClick={() => handleDeleteConfirm(openConversation.id)}
-                size="icon"
-                title="Delete conversation"
-                variant="ghost"
-              >
-                <Trash2 className="size-4" />
-              </Button>
-              <Button
-                aria-label="Close Message History"
-                className={iconButton}
-                onClick={close}
-                size="icon"
-                title="Close"
-                variant="ghost"
-              >
-                <XIcon className="size-4" />
-              </Button>
-            </header>
-          ) : (
-            <header className="flex items-center gap-2 border-b border-border/40 py-2.5 pl-4 pr-2">
-              <div className="min-w-0 flex-1">
-                <h2 className="truncate text-[15px] font-semibold tracking-tight">
-                  Recent Conversations
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  {showLoading ? "Loading…" : pluralize(conversations.length, "conversation")}
-                </p>
-              </div>
-              <Button
-                className="h-8 shrink-0 rounded-full px-3 text-xs"
+                className={headerButton}
+                data-tauri-drag-region={false}
                 onClick={handleNewChat}
                 size="sm"
+                title="Start a new chat"
                 variant="secondary"
               >
-                + New Chat
+                <Plus />
+                New chat
               </Button>
-              <Button
-                aria-label="Close Message History"
-                className={iconButton}
-                onClick={close}
-                size="icon"
-                title="Close"
-                variant="ghost"
-              >
-                <XIcon className="size-4" />
-              </Button>
-            </header>
-          )}
-
-          {/* Radix ScrollArea wraps content in a display:table div that grows
-              to the widest child; make it a block so everything wraps/truncates
-              within the 600px window instead of scrolling sideways. */}
-          <ScrollArea className="h-[calc(100vh-9rem)] [&_[data-radix-scroll-area-viewport]>div]:!block">
-            {openConversation ? (
-              <div className="px-5 py-4">
-                <ConversationTranscript messages={openConversation.messages} />
-              </div>
-            ) : showLoading ? (
-              <HistoryLoading />
-            ) : recentConversations.length === 0 ? (
-              <HistoryEmpty />
-            ) : (
-              <ul
-                aria-label="Recent conversations"
-                className="space-y-0.5 p-2"
-                onKeyDown={handleListKeyDown}
-                ref={listRef}
-              >
-                {recentConversations.map((conversation) => (
-                  <ConversationRow
-                      actions={
-                        <Button
-                          aria-label={`Delete conversation ${displayTitle(conversation.title)}`}
-                          className={`${iconButton} opacity-60 hover:text-destructive hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100`}
-                          data-tauri-drag-region={false}
-                          disabled={isDeleting}
-                          onClick={() => handleDeleteConfirm(conversation.id)}
-                          size="icon"
-                          title="Delete conversation"
-                          variant="ghost"
-                        >
-                          <Trash2 className="size-4" />
-                        </Button>
-                      }
-                      conversation={conversation}
-                      isCurrent={conversation.id === currentConversationId}
-                      key={conversation.id}
-                      onOpen={(c) => setOpenConversationId(c.id)}
-                    />
-                ))}
-              </ul>
             )}
-          </ScrollArea>
+            <Button
+              aria-label="Close Message History"
+              className="size-7 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+              data-tauri-drag-region={false}
+              onClick={close}
+              size="icon"
+              title="Close (Esc)"
+              variant="ghost"
+            >
+              <XIcon className="size-4" />
+            </Button>
+          </header>
 
-          <DeleteConfirmationDialog
-            cancelDelete={cancelDelete}
-            confirmDelete={handleConfirmDelete}
-            deleteConfirm={deleteConfirm}
-            description={`Delete "${displayTitle(pendingDelete?.title)}"? This can't be undone.`}
-            isLoading={isDeleting}
-          />
+          <section
+            aria-label={hasConversation ? "Messages" : "No messages"}
+            className="outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            ref={messagesRef}
+            tabIndex={0}
+          >
+            {/* Radix ScrollArea wraps content in a display:table div that grows
+                to the widest child; make it a block so everything wraps/truncates
+                within the 600px window instead of scrolling sideways. */}
+            <ScrollArea
+              className="h-[calc(100vh-8rem)] [&_[data-radix-scroll-area-viewport]>div]:!block"
+              ref={attachScrollArea}
+            >
+              {hasConversation ? (
+                <div className="px-2 py-2">
+                  <ConversationTranscript live={live} messages={savedMessages} />
+                </div>
+              ) : (
+                <HistoryEmpty
+                  description="Ask Frank anything — this conversation will show up here."
+                  title="No conversation yet"
+                />
+              )}
+            </ScrollArea>
+          </section>
+
         </TransparentPopoverContent>
       </Popover>
     </div>

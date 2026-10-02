@@ -1,6 +1,7 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createRef, useState } from "react";
+import { MemoryRouter } from "react-router-dom";
 import { beforeAll, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import type { ChatMessage } from "@/types/completion";
 import { VoiceComposer } from "./VoiceInputButton";
@@ -68,13 +69,6 @@ vi.mock("@/contexts", () => ({
   }),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => undefined) }));
-// Message History loads through useHistory, which reads from the lib barrel.
-vi.mock("@/lib", () => ({
-  getAllConversations: vi.fn(async () => []),
-  deleteConversation: vi.fn(async () => true),
-  deleteAllConversations: vi.fn(async () => undefined),
-  DOWNLOAD_SUCCESS_DISPLAY_MS: 1000,
-}));
 
 beforeAll(() => {
   // Radix Popper measures its anchor.
@@ -123,7 +117,8 @@ const Harness = ({
   };
 
   return (
-    <>
+    // Message History links to Toggle Settings, so the composer needs a router.
+    <MemoryRouter>
       <button type="button">outside the input bar</button>
       <output data-testid="attachments">{attachedFiles.map((f) => f.name).join(",")}</output>
       <VoiceComposer
@@ -163,7 +158,7 @@ const Harness = ({
         } as any)}
         isHidden={false}
       />
-    </>
+    </MemoryRouter>
   );
 };
 
@@ -270,8 +265,8 @@ describe("Screenshot and Attach with a visible answer", () => {
     const user = userEvent.setup();
     renderHarness();
 
-    await user.click(screen.getByRole("button", { name: "View Conversations" }));
-    expect(await screen.findByText("Recent Conversations")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Message History" }));
+    expect(await screen.findByRole("dialog", { name: "Current conversation" })).toBeInTheDocument();
     expect(answer()).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Start voice input" }));
@@ -286,12 +281,14 @@ describe("Screenshot and Attach with a visible answer", () => {
     const user = userEvent.setup();
     renderHarness();
 
-    await user.click(screen.getByRole("button", { name: "View Conversations" }));
-    expect(await screen.findByText("Recent Conversations")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Message History" }));
+    expect(await screen.findByRole("dialog", { name: "Current conversation" })).toBeInTheDocument();
 
     await user.click(screenshotButton());
 
-    await waitFor(() => expect(screen.queryByText("Recent Conversations")).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Current conversation" })).not.toBeInTheDocument()
+    );
     expect(reset).not.toHaveBeenCalled();
     expect(answer()).toBeInTheDocument();
     expect(attachments()).toBe("screenshot_1.png");

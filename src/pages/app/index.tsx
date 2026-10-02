@@ -11,6 +11,7 @@ import { ErrorLayout } from "@/layouts";
 import { getPlatform } from "@/lib";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
+import { useContinueConversationFromRoute } from "./components/message-history/useContinueConversationFromRoute";
 
 const App = () => {
   const { isHidden } = useApp();
@@ -18,6 +19,8 @@ const App = () => {
   const platform = getPlatform();
   const navigate = useNavigate();
   const [voiceState, setVoiceState] = useState("idle");
+  // "Continue chat" from Toggle Settings → Message History
+  useContinueConversationFromRoute();
 
   const hideWindow = async () => {
     try {

@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ChatConversation } from "@/types/completion";
+import { StrictMode } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import type { ChatConversation, ChatMessage } from "@/types/completion";
 
 const db = vi.hoisted(() => ({
   conversations: [] as ChatConversation[],
@@ -37,8 +38,19 @@ vi.mock("@/components", () => ({
     ),
 }));
 
-// Render the real route table; only stub what needs Tauri or the overlay.
-vi.mock("@/pages", () => ({ App: () => <p>Overlay</p> }));
+// Render the real route table; only stub what needs Tauri or the overlay. The
+// overlay stub still applies "Continue chat", exactly as the real App does.
+vi.mock("@/pages", async () => {
+  const { useContinueConversationFromRoute } = await vi.importActual<
+    typeof import("./useContinueConversationFromRoute")
+  >("./useContinueConversationFromRoute");
+  return {
+    App: () => {
+      useContinueConversationFromRoute();
+      return <p>Overlay</p>;
+    },
+  };
+});
 vi.mock("@/pages/app/ToggleSettingsLayout", async () => {
   const { Outlet } = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
   return { default: () => <Outlet /> };
@@ -67,6 +79,40 @@ vi.mock("@/pages/app/components/VoiceTranscriptionSettings", () => ({
 
 import AppRoutes from "@/routes";
 
+// The 4-exchange conversation reported from the running app, as stored
+// (oldest → newest, real timestamps; answers shortened).
+const reported = {
+  q1: "hi",
+  a1: "Hi there! How can I help you today?",
+  q2: "hi hey can you give me leetcode 100 th ans",
+  a2: "Hello! It looks like you're referring to LeetCode problem #100.",
+  q3: "hi can you tell what time is now",
+  a3: "Hello! I don't have access to real-time clocks.",
+  q4: "hi",
+  a4: "Hi there! How can I help you today?",
+};
+const reportedMessages: ChatMessage[] = [
+  { id: "m1", role: "user", content: reported.q1, timestamp: 1790949451684 },
+  { id: "m2", role: "assistant", content: reported.a1, timestamp: 1790949451685 },
+  { id: "m3", role: "user", content: reported.q2, timestamp: 1790951152718 },
+  { id: "m4", role: "assistant", content: reported.a2, timestamp: 1790951152719 },
+  { id: "m5", role: "user", content: reported.q3, timestamp: 1790951963307 },
+  { id: "m6", role: "assistant", content: reported.a3, timestamp: 1790951963308 },
+  { id: "m7", role: "user", content: reported.q4, timestamp: 1790959600725 },
+  { id: "m8", role: "assistant", content: reported.a4, timestamp: 1790959600726 },
+];
+/** Newest exchange first, each answer directly under its question. */
+const reportedNewestFirst = [
+  reported.q4,
+  reported.a4,
+  reported.q3,
+  reported.a3,
+  reported.q2,
+  reported.a2,
+  reported.q1,
+  reported.a1,
+];
+
 const conversation = (id: string, title: string, contents: string[]): ChatConversation => ({
   id,
   title,
@@ -86,9 +132,9 @@ const deferred = () => {
   return { promise, resolve };
 };
 
-const renderAt = (path: string) => {
+const renderAt = (path: string, { strict = false } = {}) => {
   window.history.replaceState(null, "", path);
-  return render(<AppRoutes />);
+  return render(strict ? <StrictMode><AppRoutes /></StrictMode> : <AppRoutes />);
 };
 
 const location = () => window.location.pathname;
@@ -197,6 +243,159 @@ describe("Toggle Settings → Message History", () => {
 
       fireEvent.click(screen.getByRole("button", { name: "Go back" }));
       expect(location()).toBe("/toggle/settings/history");
+    });
+  });
+
+  describe("Continue chat", () => {
+    let selected: Mock<(event: Event) => void>;
+    const settle = () => new Promise((r) => setTimeout(r, 50));
+
+    beforeEach(() => {
+      selected = vi.fn<(event: Event) => void>();
+      window.addEventListener("conversationSelected", selected);
+    });
+
+    afterEach(() => {
+      window.removeEventListener("conversationSelected", selected);
+    });
+
+    const selectedIds = () => selected.mock.calls.map(([event]) => (event as CustomEvent).detail);
+
+    it("returns to the main chat and makes that conversation active", async () => {
+      renderAt("/toggle/settings/history/c2");
+      await screen.findByText("What is 2 + 2?");
+
+      fireEvent.click(screen.getByRole("button", { name: /Continue chat/ }));
+
+      expect(location()).toBe("/");
+      expect(await screen.findByText("Overlay")).toBeInTheDocument();
+      await waitFor(() => expect(selectedIds()).toEqual([{ id: "c2" }]));
+      // Applied once: the route state is cleared so a re-render can't re-load it
+      await waitFor(() => expect(window.history.state?.usr ?? null).toBeNull());
+      await settle();
+      expect(selected).toHaveBeenCalledTimes(1);
+    });
+
+    it("walks list → conversation → Continue chat", async () => {
+      renderAt("/toggle/settings/history");
+
+      fireEvent.click(await screen.findByText("First chat"));
+      await screen.findByText("Hello there");
+      fireEvent.click(screen.getByRole("button", { name: /Continue chat/ }));
+
+      await waitFor(() => expect(selectedIds()).toEqual([{ id: "c1" }]));
+      expect(location()).toBe("/");
+    });
+
+    it("loads the conversation once under Strict Mode", async () => {
+      renderAt("/toggle/settings/history/c1", { strict: true });
+      await screen.findByText("Hello there");
+
+      fireEvent.click(screen.getByRole("button", { name: /Continue chat/ }));
+
+      await waitFor(() => expect(selected).toHaveBeenCalled());
+      await settle();
+      expect(selectedIds()).toEqual([{ id: "c1" }]);
+    });
+
+    it("opening the main chat normally loads nothing", async () => {
+      renderAt("/");
+
+      expect(await screen.findByText("Overlay")).toBeInTheDocument();
+      await settle();
+      expect(selected).not.toHaveBeenCalled();
+    });
+
+    it("is not offered for a missing conversation", async () => {
+      renderAt("/toggle/settings/history/missing");
+
+      await screen.findByRole("heading", { name: "Conversation not found" });
+      expect(screen.queryByRole("button", { name: /Continue chat/ })).not.toBeInTheDocument();
+    });
+
+    it("leaves the read-only view and its Delete unchanged", async () => {
+      renderAt("/toggle/settings/history/c2");
+      await screen.findByText("What is 2 + 2?");
+
+      expect(screen.getByRole("button", { name: /^Delete/ })).toBeEnabled();
+      expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+      expect(selected).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("conversation detail order", () => {
+    const at = (day: number, minute: number) => new Date(2026, 8, day, 10, minute).getTime();
+    const threeExchanges = (): ChatConversation => ({
+      id: "c3",
+      title: "Three questions",
+      createdAt: at(1, 0),
+      updatedAt: at(2, 31),
+      messages: [
+        { id: "q1", role: "user", content: "Older question", timestamp: at(1, 0) },
+        { id: "a1", role: "assistant", content: "Older answer", timestamp: at(1, 1) },
+        { id: "q2", role: "user", content: "Previous question", timestamp: at(2, 0) },
+        { id: "a2", role: "assistant", content: "Previous answer", timestamp: at(2, 1) },
+        { id: "q3", role: "user", content: "Latest question", timestamp: at(2, 30) },
+        { id: "a3", role: "assistant", content: "Latest answer", timestamp: at(2, 31) },
+      ],
+    });
+    const exchangeTexts = () =>
+      Array.from(document.querySelectorAll("[data-exchange]")).map((exchange) =>
+        Array.from(exchange.querySelectorAll("span"))
+          .map((span) => span.textContent)
+          .filter((text) => /question|answer/.test(text ?? ""))
+      );
+
+    it("shows the newest exchange first, each answer directly under its question", async () => {
+      db.conversations = [threeExchanges()];
+      renderAt("/toggle/settings/history/c3");
+      await screen.findByText("Latest question");
+
+      expect(exchangeTexts()).toEqual([
+        ["Latest question", "Latest answer"],
+        ["Previous question", "Previous answer"],
+        ["Older question", "Older answer"],
+      ]);
+    });
+
+    it("heads each day's exchanges with that day, newest day first", async () => {
+      db.conversations = [threeExchanges()];
+      renderAt("/toggle/settings/history/c3");
+      await screen.findByText("Latest question");
+
+      const exchanges = Array.from(document.querySelectorAll("[data-exchange]"));
+      expect(exchanges[0]).toHaveTextContent(/^Wed, Sep 2/);
+      expect(exchanges[1].textContent).not.toMatch(/Sep 2|Sep 1/);
+      expect(exchanges[2]).toHaveTextContent(/^Tue, Sep 1/);
+    });
+
+    it("regression: renders the reported 4-exchange conversation newest first", async () => {
+      db.conversations = [
+        {
+          id: "conv_reported",
+          title: "hi",
+          createdAt: reportedMessages[0].timestamp,
+          updatedAt: reportedMessages[7].timestamp,
+          messages: Object.freeze(reportedMessages.map((m) => Object.freeze({ ...m }))) as ChatMessage[],
+        },
+      ];
+      renderAt("/toggle/settings/history/conv_reported");
+      await screen.findByText(reported.q3);
+
+      // Rendered DOM order of the message bubbles, top to bottom
+      const bubbles = [...document.querySelectorAll("[data-exchange] .rounded-tr-sm, [data-exchange] .rounded-tl-sm")];
+      expect(bubbles.map((bubble) => bubble.textContent)).toEqual(reportedNewestFirst);
+      expect(db.conversations[0].messages.map((m) => m.id)).toEqual(["m1", "m2", "m3", "m4", "m5", "m6", "m7", "m8"]);
+    });
+
+    it("never mutates or reorders the loaded conversation", async () => {
+      const stored = threeExchanges();
+      stored.messages = Object.freeze(stored.messages.map((m) => Object.freeze(m))) as any;
+      db.conversations = [Object.freeze(stored)];
+      renderAt("/toggle/settings/history/c3");
+      await screen.findByText("Latest question");
+
+      expect(stored.messages.map((m) => m.id)).toEqual(["q1", "a1", "q2", "a2", "q3", "a3"]);
     });
   });
 
@@ -353,7 +552,7 @@ describe("Toggle Settings → Message History", () => {
       expect(rows[0]).toHaveTextContent("Newest chat");
       expect(rows[rows.length - 1]).toHaveTextContent("Oldest chat");
 
-      // Opening it still shows its messages oldest → newest
+      // Opening it shows the question first, its answer under it
       fireEvent.click(within(rows[0]).getByText("Newest chat"));
       const question = await screen.findByText("Latest question");
       const answer = screen.getByText("Latest answer");
