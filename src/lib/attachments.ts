@@ -431,6 +431,33 @@ export const providerSupportsImages = (provider: TYPE_PROVIDER): boolean =>
 
 const quoteNames = (files: AttachedFile[]) => files.map((f) => `"${f.name}"`).join(", ");
 
+/** What a provider accepts for images, as used to check any image before sending it. */
+export interface ProviderImageLimits {
+  name: string;
+  supportsImages: boolean;
+  formats: ImageMimeType[];
+  /** Largest single image, in decoded bytes. */
+  maxImageBytes: number;
+  /** Largest total of all images in one request, if the provider has one. */
+  maxTotalImageBytes?: number;
+}
+
+export const imageLimitsFor = (provider: TYPE_PROVIDER): ProviderImageLimits => {
+  const name = providerName(provider);
+  const rules: ProviderImageRules =
+    (!provider.isCustom && provider.id && PROVIDER_IMAGE_RULES[provider.id]) || {
+      name,
+      formats: COMMON_FORMATS,
+    };
+  return {
+    name,
+    supportsImages: providerSupportsImages(provider),
+    formats: rules.formats,
+    maxImageBytes: Math.min(rules.maxImageBytes ?? MAX_IMAGE_BYTES, MAX_IMAGE_BYTES),
+    maxTotalImageBytes: rules.maxTotalImageBytes,
+  };
+};
+
 /**
  * Checks attachments against what the selected provider accepts, before the
  * request is sent. Returns a message for the user, or null when all is well.
@@ -442,16 +469,11 @@ export const validateAttachmentsForProvider = (
   const images = attachments.filter(isImageAttachment);
   if (images.length === 0) return null;
 
-  const name = providerName(provider);
-  if (!providerSupportsImages(provider)) {
+  const rules = imageLimitsFor(provider);
+  const { name } = rules;
+  if (!rules.supportsImages) {
     return `${name} can't read images. Remove ${quoteNames(images)} or switch to a provider that supports images.`;
   }
-
-  const rules: ProviderImageRules =
-    (!provider.isCustom && provider.id && PROVIDER_IMAGE_RULES[provider.id]) || {
-      name,
-      formats: COMMON_FORMATS,
-    };
 
   const wrongFormat = images.filter((f) => !rules.formats.includes(f.type as ImageMimeType));
   if (wrongFormat.length > 0) {
@@ -459,7 +481,7 @@ export const validateAttachmentsForProvider = (
     return `${name} doesn't accept ${quoteNames(wrongFormat)} (it accepts ${accepted}). Remove it or switch provider.`;
   }
 
-  const maxImage = Math.min(rules.maxImageBytes ?? MAX_IMAGE_BYTES, MAX_IMAGE_BYTES);
+  const maxImage = rules.maxImageBytes;
   const tooLarge = images.filter((f) => f.size > maxImage);
   if (tooLarge.length > 0) {
     return `${quoteNames(tooLarge)} is too large for ${name} (up to ${formatBytes(maxImage)} per image).`;

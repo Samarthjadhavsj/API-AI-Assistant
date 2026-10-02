@@ -1,4 +1,5 @@
 import { getDatabase } from "./config";
+import { deleteAllAttachmentData, deleteAttachmentData } from "./attachment-data.action";
 import { ChatConversation } from "@/types";
 import { safeLocalStorage } from "@/lib";
 
@@ -374,6 +375,8 @@ export async function deleteConversation(id: string): Promise<boolean> {
   const db = await getDatabase();
 
   try {
+    // Its kept attachment data goes with it (not left to the foreign key)
+    await deleteAttachmentData(id);
     const result = await db.execute("DELETE FROM conversations WHERE id = ?", [
       id,
     ]);
@@ -392,7 +395,8 @@ export async function deleteAllConversations(): Promise<void> {
   const db = await getDatabase();
 
   try {
-    // Delete in correct order (messages first due to foreign key)
+    // Delete in correct order (attachment data and messages first due to foreign keys)
+    await deleteAllAttachmentData();
     await db.execute("DELETE FROM messages");
     await db.execute("DELETE FROM conversations");
   } catch (error) {

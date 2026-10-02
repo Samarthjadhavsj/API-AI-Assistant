@@ -17,5 +17,12 @@ pub fn migrations() -> Vec<Migration> {
             sql: include_str!("migrations/chat-history.sql"),
             kind: MigrationKind::Up,
         },
+        // Migration 3: Keep image attachment data per conversation (conversation memory)
+        Migration {
+            version: 3,
+            description: "create_message_attachments_table",
+            sql: include_str!("migrations/message-attachments.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }

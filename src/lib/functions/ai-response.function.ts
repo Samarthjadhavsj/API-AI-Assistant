@@ -144,6 +144,22 @@ export async function* fetchAIResponse(params: {
       ["messages", "contents", "conversation", "history"].includes(key)
     );
 
+    // The user-message template for earlier messages that carry images. Its
+    // variables are filled in first (so text in a message is never treated as
+    // a variable), without the system prompt some templates put in the user
+    // turn (Gemini): that is sent once, with the current message.
+    const rawUserTemplate = Array.isArray(template[messagesKey ?? ""])
+      ? template[messagesKey!].find((m: any) => JSON.stringify(m).includes("{{TEXT}}"))
+      : undefined;
+    const historyUserTemplate = rawUserTemplate
+      ? deepVariableReplacer(
+          JSON.parse(
+            JSON.stringify(rawUserTemplate).replace(/\{\{SYSTEM_PROMPT\}\}(\\n)*/g, "")
+          ),
+          { ...allVariables, SYSTEM_PROMPT: "" }
+        )
+      : undefined;
+
     // A custom endpoint may take the message outside a messages list (e.g.
     // "prompt": "{{TEXT}}"). Those spots are marked in the template itself
     // and filled last, so "{{TEXT}}" inside a filled-in value (a system
@@ -179,7 +195,8 @@ export async function* fetchAIResponse(params: {
         bodyObj[messagesKey],
         history,
         userMessage,
-        images
+        images,
+        historyUserTemplate
       );
       
       // Fix Gemini format: convert "content" to "parts"

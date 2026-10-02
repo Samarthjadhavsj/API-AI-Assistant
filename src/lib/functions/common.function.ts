@@ -159,26 +159,33 @@ export function processUserMessageTemplate(
   return imageReplacer(result);
 }
 
+/** A history entry as plain text (the provider-neutral `images` field is never sent). */
+const plainHistoryEntry = ({ images: _images, ...entry }: Message) => entry;
+
 /**
  * Builds a dynamic messages array from a template, incorporating history and the current user message.
  * @param messagesTemplate The message template array from the cURL configuration.
  * @param history An array of previous messages in the conversation.
  * @param userMessage The user's current text message.
  * @param images Images for the current message (base64 PNG, or with their MIME type).
+ * @param historyUserTemplate The provider's user-message template for earlier
+ *   messages. An earlier user message with images is built from it, in the
+ *   provider's own format, exactly like the current message.
  * @returns The fully constructed messages array.
  */
 export function buildDynamicMessages(
   messagesTemplate: any[],
   history: Message[],
   userMessage: string,
-  images: Array<string | ImageInput> = []
+  images: Array<string | ImageInput> = [],
+  historyUserTemplate?: any
 ): any[] {
   const userMessageTemplateIndex = messagesTemplate.findIndex((m) =>
     JSON.stringify(m).includes("{{TEXT}}")
   );
 
   if (userMessageTemplateIndex === -1) {
-    return [...history, { role: "user", content: userMessage }]; // Fallback
+    return [...history.map(plainHistoryEntry), { role: "user", content: userMessage }]; // Fallback
   }
 
   const prefixMessages = messagesTemplate.slice(0, userMessageTemplateIndex);
@@ -191,7 +198,17 @@ export function buildDynamicMessages(
     images
   );
 
-  return [...prefixMessages, ...history, newUserMessage, ...suffixMessages];
+  const historyMessages = history.map((entry) =>
+    entry.role === "user" && entry.images?.length && historyUserTemplate
+      ? processUserMessageTemplate(
+          historyUserTemplate,
+          typeof entry.content === "string" ? entry.content : "",
+          entry.images
+        )
+      : plainHistoryEntry(entry)
+  );
+
+  return [...prefixMessages, ...historyMessages, newUserMessage, ...suffixMessages];
 }
 
 /**

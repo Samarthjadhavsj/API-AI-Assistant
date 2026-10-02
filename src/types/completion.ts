@@ -53,4 +53,9 @@ export interface Message {
         source?: any;
         inline_data?: any;
       }>;
+  /**
+   * For an earlier user message in the conversation: the images that were
+   * attached to it, sent again with that message (in the provider's format).
+   */
+  images?: Array<{ data: string; mimeType: string }>;
 }

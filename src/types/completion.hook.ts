@@ -119,6 +119,8 @@ export interface UseCompletionReturn {
   attachmentNotices: string[];
   /** Clears the attachment notices */
   dismissAttachmentNotices: () => void;
+  /** Earlier images of the conversation that couldn't be sent with the last message */
+  contextNotice?: string | null;
   /** Whether picked or pasted files are still being read */
   isReadingAttachments: boolean;
 

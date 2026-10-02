@@ -55,6 +55,7 @@ export const Input = ({
   setKeepEngaged,
   onVoiceStateChange,
   trailingControls,
+  contextNotice,
 }: UseCompletionReturn & {
   isHidden: boolean;
   onVoiceStateChange?: (state: string) => void;
@@ -450,6 +451,11 @@ export const Input = ({
 
           <ScrollArea ref={scrollAreaRef} className="h-[calc(100vh-7rem)]">
             <div className="p-4">
+              {contextNotice && (
+                <p className="mb-3 text-xs text-muted-foreground" data-testid="context-notice" role="status">
+                  {contextNotice}
+                </p>
+              )}
               {keepEngaged ? (
                 // Conversation: the question just sent on top with its answer
                 // streaming under it, then earlier exchanges, newest first.
