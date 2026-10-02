@@ -5,6 +5,7 @@ import { ChatMessage } from "@/types/completion";
 import { useCallback, useMemo, useRef, type KeyboardEvent } from "react";
 import { useChatAutoScroll } from "@/hooks/useChatAutoScroll";
 import { getResponseSettings } from "@/lib/storage/response-settings.storage";
+import { cn } from "@/lib/utils";
 import {
   ConversationTranscript,
   type LiveExchange,
@@ -25,7 +26,8 @@ interface MessageHistoryProps {
   setMessageHistoryOpen: (open: boolean) => void;
   /**
    * Hides the icon (while answering or recording) without unmounting, so the
-   * drawer keeps the reading position it remembers.
+   * drawer keeps the reading position it remembers. Its slot stays in the
+   * layout, so the composer and mic beside it never shift.
    */
   hidden?: boolean;
   /** Called after the drawer closes: by its icon, or any other way. */
@@ -188,7 +190,11 @@ export const MessageHistory = ({
   };
 
   return (
-    <div className="relative mt-1 shrink-0" hidden={hidden}>
+    <div
+      className={cn("relative mt-1 shrink-0", hidden && "invisible")}
+      aria-hidden={hidden || undefined}
+      inert={hidden || undefined}
+    >
       <Popover open={messageHistoryOpen} onOpenChange={handleOpenChange}>
         <PopoverTrigger asChild>
           <Button

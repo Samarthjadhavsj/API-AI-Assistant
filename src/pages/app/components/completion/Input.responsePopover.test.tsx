@@ -318,11 +318,35 @@ describe("Input response popover", () => {
 
       rerender(<Harness reset={reset} isLoading pendingMessage={question} response="" />);
       expect(screen.queryByRole("button", { name: "Message History" })).not.toBeInTheDocument();
-      expect(icon.closest("[hidden]")).not.toBeNull();
+      expect(icon.closest("[aria-hidden='true']")).not.toBeNull();
 
       rerender(<Harness reset={reset} />);
       // The very same element comes back: nothing was remounted
       expect(screen.getByRole("button", { name: "Message History" })).toBe(icon);
+    });
+
+    it("keeps the hidden icon's slot in the layout (no reflow of the composer or mic), out of reach", () => {
+      const { rerender } = render(<Harness reset={reset} />);
+      const slot = screen.getByRole("button", { name: "Message History" }).parentElement!;
+      const siblingsBefore = Array.from(slot.parentElement!.children);
+      expect(slot).not.toHaveClass("invisible");
+      expect(slot).not.toHaveAttribute("aria-hidden");
+      expect(slot).not.toHaveAttribute("inert");
+
+      rerender(<Harness reset={reset} isLoading pendingMessage={question} response="" />);
+      // visibility:hidden (keeps its box), never display:none
+      expect(slot).not.toHaveAttribute("hidden");
+      expect(slot).toHaveClass("invisible", "relative", "mt-1", "shrink-0");
+      expect(slot.style.display).toBe("");
+      expect(Array.from(slot.parentElement!.children)).toEqual(siblingsBefore);
+      // Unavailable: not announced, not focusable or clickable
+      expect(slot).toHaveAttribute("aria-hidden", "true");
+      expect(slot).toHaveAttribute("inert");
+
+      rerender(<Harness reset={reset} />);
+      expect(slot).not.toHaveClass("invisible");
+      expect(slot).not.toHaveAttribute("aria-hidden");
+      expect(slot).not.toHaveAttribute("inert");
     });
 
     it("an open Message History stays open and shows the new question on top, its answer streaming under it", async () => {
